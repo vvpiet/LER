@@ -72,7 +72,7 @@ def admin_page():
     
     with tab2:
         st.header("Add Subjects to Classes")
-        class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"])
+        class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"], key="admin_add_subject_class")
         subject_name = st.text_input("Subject Name")
         if st.button("Add Subject", key="add_subject"):
             conn = get_db_connection()
@@ -97,7 +97,7 @@ def admin_page():
             st.warning("No faculty available to assign subjects")
         else:
             faculty_dict = {f['name']: f['id'] for f in faculty}
-            selected_faculty = st.selectbox("Faculty", faculty_names)
+            selected_faculty = st.selectbox("Faculty", faculty_names, key="admin_assign_faculty")
             faculty_id = faculty_dict[selected_faculty]
             
             # List subjects
@@ -108,7 +108,7 @@ def admin_page():
                 st.warning("No subjects available")
             else:
                 subject_dict = {f"{s['name']} ({s['class_name']})": s['id'] for s in subjects}
-                selected_subject = st.selectbox("Subject", subject_options)
+                selected_subject = st.selectbox("Subject", subject_options, key="admin_assign_subject")
                 subject_id = subject_dict[selected_subject]
                 
                 if st.button("Assign", key="assign_subject"):
@@ -120,7 +120,7 @@ def admin_page():
     
     with tab4:
         st.header("Download Monthly Attendance")
-        month = st.selectbox("Month", list(range(1,13)))
+        month = st.selectbox("Month", list(range(1,13)), key="admin_attendance_month")
         year = st.number_input("Year", value=2023)
         if st.button("Download", key="download_attendance"):
             # Query attendance
@@ -138,9 +138,9 @@ def admin_page():
             # Calculate week end
             week_end = week_start + pd.Timedelta(days=6)
         else:
-            month = st.selectbox("Month", list(range(1,13)))
+            month = st.selectbox("Month", list(range(1,13)), key="admin_engagement_month")
             year = st.number_input("Year", value=2023)
-        if st.button("Download"):
+        if st.button("Download", key="download_engagement"):
             conn = get_db_connection()
             if period == "Weekly":
                 df = pd.read_sql("SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s", conn, params=(week_start, week_end))
@@ -152,13 +152,13 @@ def admin_page():
     
     with tab6:
         st.header("Create Users")
-        role = st.selectbox("Role", ["faculty", "student"])
+        role = st.selectbox("Role", ["faculty", "student"], key="admin_create_user_role")
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         name = st.text_input("Name")
         email = st.text_input("Email")
         if role == "student":
-            class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"])
+            class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"], key="admin_create_user_class")
         if st.button("Create", key="create_user"):
             if role == "student":
                 conn = get_db_connection()
@@ -191,7 +191,7 @@ def faculty_page():
             st.warning("No subjects assigned to you")
         else:
             subject_dict = {f"{s['name']} ({s['class_name']})": s['id'] for s in subjects}
-            selected_subject = st.selectbox("Subject", subject_options)
+            selected_subject = st.selectbox("Subject", subject_options, key="faculty_att_subject")
             subject_id = subject_dict[selected_subject]
             
             date = st.date_input("Date")
