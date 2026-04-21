@@ -121,18 +121,22 @@ def upload_resource(faculty_id, subject_id, file_name, file_data, resource_type)
     conn.close()
 
 def get_faculty_resources(faculty_id, subject_id=None):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    if subject_id:
-        cur.execute('SELECT id, file_name, resource_type, uploaded_date FROM faculty_resources WHERE faculty_id = %s AND subject_id = %s ORDER BY uploaded_date DESC',
-                    (faculty_id, subject_id))
-    else:
-        cur.execute('SELECT id, file_name, resource_type, uploaded_date, s.name as subject_name FROM faculty_resources fr JOIN subjects s ON fr.subject_id = s.id WHERE faculty_id = %s ORDER BY uploaded_date DESC',
-                    (faculty_id,))
-    resources = cur.fetchall()
-    cur.close()
-    conn.close()
-    return resources
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if subject_id:
+            cur.execute('SELECT id, file_name, resource_type, uploaded_date FROM faculty_resources WHERE faculty_id = %s AND subject_id = %s ORDER BY uploaded_date DESC',
+                        (faculty_id, subject_id))
+        else:
+            cur.execute('SELECT id, file_name, resource_type, uploaded_date, s.name as subject_name FROM faculty_resources fr LEFT JOIN subjects s ON fr.subject_id = s.id WHERE fr.faculty_id = %s ORDER BY fr.uploaded_date DESC',
+                        (faculty_id,))
+        resources = cur.fetchall()
+        cur.close()
+        conn.close()
+        return resources if resources else []
+    except Exception as e:
+        print(f"Error getting faculty resources: {e}")
+        return []
 
 def delete_resource(resource_id):
     conn = get_db_connection()

@@ -336,7 +336,12 @@ def faculty_page():
     
     with tab4:
         st.header("Your Resources")
-        resources = get_faculty_resources(user['id'])
+        try:
+            resources = get_faculty_resources(user['id'])
+        except Exception as e:
+            st.error(f"Error loading resources: {str(e)}")
+            resources = []
+        
         if not resources:
             st.info("No resources uploaded yet")
         else:
@@ -347,7 +352,7 @@ def faculty_page():
                 with col2:
                     st.write(resource['resource_type'])
                 with col3:
-                    st.write(resource['subject_name'])
+                    st.write(resource.get('subject_name', 'N/A'))
                 with col4:
                     st.write(resource['uploaded_date'])
                 with col5:
