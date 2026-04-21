@@ -62,7 +62,18 @@ def create_tables():
             lecture_number INTEGER,
             syllabus_percent DECIMAL(5,2),
             total_present INTEGER,
-            total_absent INTEGER
+            total_absent INTEGER,
+            absent_roll_numbers TEXT[]
+        );
+        CREATE TABLE IF NOT EXISTS faculty_resources (
+            id SERIAL PRIMARY KEY,
+            faculty_id INTEGER REFERENCES users(id),
+            subject_id INTEGER REFERENCES subjects(id),
+            file_name VARCHAR(255) NOT NULL,
+            file_type VARCHAR(50) NOT NULL,
+            file_data BYTEA NOT NULL,
+            resource_type VARCHAR(50) NOT NULL,
+            uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     ''')
     conn.commit()
@@ -98,3 +109,76 @@ def authenticate_user(username, password):
     return None
 
 # Other functions will be added as needed
+
+# Faculty resource functions
+def upload_resource(faculty_id, subject_id, file_name, file_data, resource_type):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO faculty_resources (faculty_id, subject_id, file_name, file_data, resource_type, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
+                (faculty_id, subject_id, file_name, file_data, resource_type, file_name.split('.')[-1]))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_faculty_resources(faculty_id, subject_id=None):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    if subject_id:
+        cur.execute('SELECT id, file_name, resource_type, uploaded_date FROM faculty_resources WHERE faculty_id = %s AND subject_id = %s ORDER BY uploaded_date DESC',
+                    (faculty_id, subject_id))
+    else:
+        cur.execute('SELECT id, file_name, resource_type, uploaded_date, s.name as subject_name FROM faculty_resources fr JOIN subjects s ON fr.subject_id = s.id WHERE faculty_id = %s ORDER BY uploaded_date DESC',
+                    (faculty_id,))
+    resources = cur.fetchall()
+    cur.close()
+    conn.close()
+    return resources
+
+def delete_resource(resource_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM faculty_resources WHERE id = %s', (resource_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_resource_file(resource_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute('SELECT file_name, file_data, file_type FROM faculty_resources WHERE id = %s', (resource_id,))
+    resource = cur.fetchone()
+    cur.close()
+    conn.close()
+    return resource
+
+# Student management functions
+def get_all_students():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute('SELECT s.id, s.roll_no, s.name, c.name as class_name FROM students s JOIN classes c ON s.class_id = c.id ORDER BY s.roll_no')
+    students = cur.fetchall()
+    cur.close()
+    conn.close()
+    return students
+
+def update_student(student_id, roll_no, name, class_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('SELECT id FROM classes WHERE name = %s', (class_name,))
+    class_id = cur.fetchone()[0]
+    cur.execute('UPDATE students SET roll_no = %s, name = %s, class_id = %s WHERE id = %s',
+                (roll_no, name, class_id, student_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def delete_student(student_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Delete attendance records first (cascade)
+    cur.execute('DELETE FROM attendance WHERE student_id = %s', (student_id,))
+    # Delete student
+    cur.execute('DELETE FROM students WHERE id = %s', (student_id,))
+    conn.commit()
+    cur.close()
+    conn.close()

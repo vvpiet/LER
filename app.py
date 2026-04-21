@@ -46,7 +46,7 @@ def logout():
 # Admin page
 def admin_page():
     st.title("Admin Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students"])
     
     with tab1:
         st.header("Upload Student List")
@@ -143,9 +143,9 @@ def admin_page():
         if st.button("Download", key="download_engagement"):
             conn = get_db_connection()
             if period == "Weekly":
-                df = pd.read_sql("SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s", conn, params=(week_start, week_end))
+                df = pd.read_sql("SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s", conn, params=(week_start, week_end))
             else:
-                df = pd.read_sql(f"SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE EXTRACT(MONTH FROM le.date) = {month} AND EXTRACT(YEAR FROM le.date) = {year}", conn)
+                df = pd.read_sql(f"SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE EXTRACT(MONTH FROM le.date) = {month} AND EXTRACT(YEAR FROM le.date) = {year}", conn)
             conn.close()
             csv = df.to_csv(index=False)
             st.download_button("Download CSV", csv, "engagement.csv", key="download_eng_csv")
@@ -172,12 +172,63 @@ def admin_page():
                 conn.close()
             create_user(username, password, role, name, email)
             st.success("User created")
+    
+    with tab7:
+        st.header("Manage Students")
+        students = get_all_students()
+        if not students:
+            st.warning("No students found")
+        else:
+            st.subheader("Student List")
+            for student in students:
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+                with col1:
+                    st.write(student['roll_no'])
+                with col2:
+                    st.write(student['name'])
+                with col3:
+                    st.write(student['class_name'])
+                with col4:
+                    if st.button("Edit", key=f"edit_student_{student['id']}"):
+                        st.session_state.edit_student_id = student['id']
+                with col5:
+                    if st.button("Delete", key=f"delete_student_{student['id']}"):
+                        st.session_state.delete_student_id = student['id']
+            
+            if 'edit_student_id' in st.session_state:
+                st.divider()
+                st.subheader("Edit Student")
+                student = next((s for s in students if s['id'] == st.session_state.edit_student_id), None)
+                if student:
+                    new_roll_no = st.text_input("Roll No", value=student['roll_no'], key="edit_roll_no")
+                    new_name = st.text_input("Name", value=student['name'], key="edit_name")
+                    new_class = st.selectbox("Class", ["SY", "TY", "B.Tech"], index=["SY", "TY", "B.Tech"].index(student['class_name']), key="edit_class")
+                    if st.button("Save Changes", key="save_student_changes"):
+                        update_student(st.session_state.edit_student_id, new_roll_no, new_name, new_class)
+                        del st.session_state.edit_student_id
+                        st.success("Student updated")
+                        st.rerun()
+            
+            if 'delete_student_id' in st.session_state:
+                st.divider()
+                st.warning("Are you sure you want to delete this student? All related attendance records will be deleted.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Confirm Delete", key="confirm_delete_student"):
+                        delete_student(st.session_state.delete_student_id)
+                        del st.session_state.delete_student_id
+                        st.success("Student deleted")
+                        st.rerun()
+                with col2:
+                    if st.button("Cancel", key="cancel_delete_student"):
+                        del st.session_state.delete_student_id
+                        st.rerun()
 
 # Faculty page
 def faculty_page():
     st.title("Faculty Dashboard")
     user = st.session_state.user
-    tab1, tab2 = st.tabs(["Mark Attendance", "Lecture Engagement"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Mark Attendance", "Lecture Engagement", "Upload Resources", "View Resources"])
     
     with tab1:
         st.header("Mark Attendance")
@@ -238,22 +289,72 @@ def faculty_page():
             lecture_num = st.number_input("Lecture Number", min_value=1)
             syllabus_pct = st.number_input("% Syllabus Covered", min_value=0.0, max_value=100.0)
             
-            # Get attendance counts for that date, subject, faculty
-            cur.execute("SELECT COUNT(*) as total, SUM(CASE WHEN present THEN 1 ELSE 0 END) as present FROM attendance WHERE subject_id = %s AND faculty_id = %s AND date = %s", (subject_id, user['id'], date))
-            att = cur.fetchone()
-            total_students = att['total']
-            present = att['present'] or 0
+            # Get attendance records for that date, subject, faculty
+            cur.execute("SELECT st.roll_no, a.present FROM attendance a JOIN students st ON a.student_id = st.id WHERE a.subject_id = %s AND a.faculty_id = %s AND a.date = %s ORDER BY st.roll_no", (subject_id, user['id'], date))
+            att_records = cur.fetchall()
+            total_students = len(att_records)
+            present = sum(1 for a in att_records if a['present'])
             absent = total_students - present
+            absent_roll_numbers = [a['roll_no'] for a in att_records if not a['present']]
             
             st.write(f"Total Students: {total_students}, Present: {present}, Absent: {absent}")
+            st.info(f"Absent Students: {', '.join(absent_roll_numbers) if absent_roll_numbers else 'None'}")
             
             if st.button("Submit Engagement", key="submit_engagement"):
-                cur.execute("INSERT INTO lecture_engagement (faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                            (user['id'], subject_id, date, topic, lecture_num, syllabus_pct, present, absent))
+                cur.execute("INSERT INTO lecture_engagement (faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent, absent_roll_numbers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                            (user['id'], subject_id, date, topic, lecture_num, syllabus_pct, present, absent, absent_roll_numbers))
                 conn.commit()
                 st.success("Submitted")
         cur.close()
         conn.close()
+    
+    with tab3:
+        st.header("Upload Resources (Assignments & Notes)")
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT s.id, s.name, c.name as class_name FROM subjects s JOIN faculty_subjects fs ON s.id = fs.subject_id JOIN classes c ON s.class_id = c.id WHERE fs.faculty_id = %s", (user['id'],))
+        subjects = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        subject_options = [f"{s['name']} ({s['class_name']})" for s in subjects]
+        if not subject_options:
+            st.warning("No subjects assigned to you")
+        else:
+            subject_dict = {f"{s['name']} ({s['class_name']})": s['id'] for s in subjects}
+            selected_subject = st.selectbox("Subject", subject_options, key="upload_subject")
+            subject_id = subject_dict[selected_subject]
+            
+            resource_type = st.selectbox("Resource Type", ["Assignment", "Notes", "Other"], key="resource_type")
+            uploaded_file = st.file_uploader("Choose file", key="resource_file")
+            
+            if uploaded_file and st.button("Upload", key="upload_resource"):
+                file_data = uploaded_file.read()
+                upload_resource(user['id'], subject_id, uploaded_file.name, file_data, resource_type)
+                st.success(f"{resource_type} uploaded successfully")
+                st.rerun()
+    
+    with tab4:
+        st.header("Your Resources")
+        resources = get_faculty_resources(user['id'])
+        if not resources:
+            st.info("No resources uploaded yet")
+        else:
+            for resource in resources:
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+                with col1:
+                    st.write(resource['file_name'])
+                with col2:
+                    st.write(resource['resource_type'])
+                with col3:
+                    st.write(resource['subject_name'])
+                with col4:
+                    st.write(resource['uploaded_date'])
+                with col5:
+                    if st.button("Delete", key=f"delete_resource_{resource['id']}"):
+                        delete_resource(resource['id'])
+                        st.success("Resource deleted")
+                        st.rerun()
 
 # Student page
 def student_page():
