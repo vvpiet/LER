@@ -1,6 +1,8 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import Binary
+from psycopg2 import Binary
 import bcrypt
 from dotenv import load_dotenv
 
@@ -112,13 +114,17 @@ def authenticate_user(username, password):
 
 # Faculty resource functions
 def upload_resource(faculty_id, subject_id, file_name, file_data, resource_type):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('INSERT INTO faculty_resources (faculty_id, subject_id, file_name, file_data, resource_type, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
-                (faculty_id, subject_id, file_name, file_data, resource_type, file_name.split('.')[-1]))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('INSERT INTO faculty_resources (faculty_id, subject_id, file_name, file_data, resource_type, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
+                    (faculty_id, subject_id, file_name, file_data, resource_type, file_name.split('.')[-1]))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error uploading resource: {e}")
+        raise
 
 def get_faculty_resources(faculty_id, subject_id=None):
     try:
