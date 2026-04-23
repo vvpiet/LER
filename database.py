@@ -82,6 +82,15 @@ def create_tables():
     cur.close()
     conn.close()
 
+
+def ensure_schema():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE lecture_engagement ADD COLUMN IF NOT EXISTS absent_roll_numbers TEXT[]")
+    conn.commit()
+    cur.close()
+    conn.close()
+
 # User functions
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')

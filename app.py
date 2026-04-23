@@ -10,6 +10,7 @@ st.set_page_config(page_title="Lecture Engagement Register", layout="wide")
 # Initialize database
 if 'db_init' not in st.session_state:
     create_tables()
+    ensure_schema()
     # Insert initial classes
     conn = get_db_connection()
     cur = conn.cursor()
@@ -23,6 +24,8 @@ if 'db_init' not in st.session_state:
     cur.close()
     conn.close()
     st.session_state.db_init = True
+else:
+    ensure_schema()
 
 # Login function
 def login():
