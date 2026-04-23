@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import database
 from database import *
 import os
 
@@ -330,14 +331,14 @@ def faculty_page():
             
             if uploaded_file and st.button("Upload", key="upload_resource"):
                 file_data = uploaded_file.read()
-                upload_resource(user['id'], subject_id, uploaded_file.name, file_data, resource_type)
+                database.upload_resource(user['id'], subject_id, uploaded_file.name, file_data, resource_type)
                 st.success(f"{resource_type} uploaded successfully")
                 st.rerun()
     
     with tab4:
         st.header("Your Resources")
         try:
-            resources = get_faculty_resources(user['id'])
+            resources = database.get_faculty_resources(user['id'])
         except Exception as e:
             st.error(f"Error loading resources: {str(e)}")
             resources = []
@@ -357,7 +358,7 @@ def faculty_page():
                     st.write(resource['uploaded_date'])
                 with col5:
                     if st.button("Delete", key=f"delete_resource_{resource['id']}"):
-                        delete_resource(resource['id'])
+                        database.delete_resource(resource['id'])
                         st.success("Resource deleted")
                         st.rerun()
 
