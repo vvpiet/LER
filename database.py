@@ -144,6 +144,40 @@ def get_faculty_resources(faculty_id, subject_id=None):
         print(f"Error getting faculty resources: {e}")
         return []
 
+
+def store_lecture_engagement(faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent, absent_roll_numbers):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO lecture_engagement (faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent, absent_roll_numbers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                (faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent, absent_roll_numbers))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_student_resources(roll_no):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute('''
+            SELECT fr.id, fr.file_name, fr.file_data, fr.resource_type, fr.uploaded_date,
+                   s.name AS subject_name, u.name AS faculty_name
+            FROM faculty_resources fr
+            JOIN subjects s ON fr.subject_id = s.id
+            JOIN students st ON s.class_id = st.class_id
+            JOIN users u ON fr.faculty_id = u.id
+            WHERE st.roll_no = %s
+            ORDER BY fr.uploaded_date DESC
+        ''', (roll_no,))
+        resources = cur.fetchall()
+        cur.close()
+        conn.close()
+        return resources if resources else []
+    except Exception as e:
+        print(f"Error getting student resources: {e}")
+        return []
+
+
 def delete_resource(resource_id):
     conn = get_db_connection()
     cur = conn.cursor()

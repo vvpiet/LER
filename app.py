@@ -122,7 +122,7 @@ def admin_page():
     with tab4:
         st.header("Download Monthly Attendance")
         month = st.selectbox("Month", list(range(1,13)), key="admin_attendance_month")
-        year = st.number_input("Year", value=2023)
+        year = st.number_input("Year", value=2023, key="admin_attendance_year")
         if st.button("Download", key="download_attendance"):
             # Query attendance
             conn = get_db_connection()
@@ -133,14 +133,14 @@ def admin_page():
     
     with tab5:
         st.header("Download Lecture Engagement")
-        period = st.selectbox("Period", ["Weekly", "Monthly"])
+        period = st.selectbox("Period", ["Weekly", "Monthly"], key="admin_engagement_period")
         if period == "Weekly":
-            week_start = st.date_input("Week Start")
+            week_start = st.date_input("Week Start", key="admin_engagement_week_start")
             # Calculate week end
             week_end = week_start + pd.Timedelta(days=6)
         else:
             month = st.selectbox("Month", list(range(1,13)), key="admin_engagement_month")
-            year = st.number_input("Year", value=2023)
+            year = st.number_input("Year", value=2023, key="admin_engagement_year")
         if st.button("Download", key="download_engagement"):
             conn = get_db_connection()
             if period == "Weekly":
@@ -154,10 +154,10 @@ def admin_page():
     with tab6:
         st.header("Create Users")
         role = st.selectbox("Role", ["faculty", "student"], key="admin_create_user_role")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        name = st.text_input("Name")
-        email = st.text_input("Email")
+        username = st.text_input("Username", key="admin_create_username")
+        password = st.text_input("Password", type="password", key="admin_create_password")
+        name = st.text_input("Name", key="admin_create_name")
+        email = st.text_input("Email", key="admin_create_email")
         if role == "student":
             class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"], key="admin_create_user_class")
         if st.button("Create", key="create_user"):
@@ -246,8 +246,8 @@ def faculty_page():
             selected_subject = st.selectbox("Subject", subject_options, key="faculty_att_subject")
             subject_id = subject_dict[selected_subject]
             
-            date = st.date_input("Date")
-            time = st.time_input("Time")
+            date = st.date_input("Date", key="att_date")
+            time = st.time_input("Time", key="att_time")
             
             # Get students for the class
             cur.execute("SELECT st.id, st.roll_no, st.name FROM students st JOIN subjects sub ON st.class_id = sub.class_id WHERE sub.id = %s", (subject_id,))
@@ -302,9 +302,7 @@ def faculty_page():
             st.info(f"Absent Students: {', '.join(absent_roll_numbers) if absent_roll_numbers else 'None'}")
             
             if st.button("Submit Engagement", key="submit_engagement"):
-                cur.execute("INSERT INTO lecture_engagement (faculty_id, subject_id, date, topic_covered, lecture_number, syllabus_percent, total_present, total_absent, absent_roll_numbers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                            (user['id'], subject_id, date, topic, lecture_num, syllabus_pct, present, absent, absent_roll_numbers))
-                conn.commit()
+                database.store_lecture_engagement(user['id'], subject_id, date, topic, lecture_num, syllabus_pct, present, absent, absent_roll_numbers)
                 st.success("Submitted")
         cur.close()
         conn.close()
@@ -366,17 +364,35 @@ def faculty_page():
 def student_page():
     st.title("Student Dashboard")
     user = st.session_state.user
-    # Assume student is linked, but for simplicity, show attendance for all
-    # In reality, need to link user to student
-    # For now, placeholder
+    # Assume student is linked by roll_no=username
     st.header("Your Attendance")
-    # Query attendance for the student
-    # But since no link, perhaps by username or something
-    # Let's assume username is roll_no
     conn = get_db_connection()
     df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s)", conn, params=(user['username'],))
     conn.close()
     st.dataframe(df)
+
+    st.header("Available Resources")
+    try:
+        resources = database.get_student_resources(user['username'])
+    except Exception as e:
+        st.error(f"Error loading resources: {str(e)}")
+        resources = []
+
+    if not resources:
+        st.info("No resources available yet")
+    else:
+        for resource in resources:
+            cols = st.columns([2, 2, 2, 2, 1])
+            with cols[0]:
+                st.write(resource['file_name'])
+            with cols[1]:
+                st.write(resource['subject_name'])
+            with cols[2]:
+                st.write(resource['resource_type'])
+            with cols[3]:
+                st.write(resource['uploaded_date'])
+            with cols[4]:
+                st.download_button("Download", data=bytes(resource['file_data']), file_name=resource['file_name'], key=f"download_resource_{resource['id']}")
 
 # Main app
 if 'user' not in st.session_state:
