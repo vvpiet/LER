@@ -144,7 +144,14 @@ def admin_page():
         if st.button("Download", key="download_engagement"):
             conn = get_db_connection()
             if period == "Weekly":
-                df = pd.read_sql("SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s", conn, params=(week_start, week_end))
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute(
+                    "SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s",
+                    (week_start, week_end)
+                )
+                rows = cur.fetchall()
+                cur.close()
+                df = pd.DataFrame(rows)
             else:
                 df = pd.read_sql(f"SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE EXTRACT(MONTH FROM le.date) = {month} AND EXTRACT(YEAR FROM le.date) = {year}", conn)
             conn.close()
