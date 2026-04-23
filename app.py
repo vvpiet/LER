@@ -4,8 +4,26 @@ import database
 from database import *
 import os
 
+COLLEGE_NAME = "Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
+COLLEGE_LOGO_PATH = "college_logo.png"
+
 # Set page config
 st.set_page_config(page_title="Lecture Engagement Register", layout="wide")
+
+
+def render_page_header():
+    cols = st.columns([1, 6])
+    if os.path.exists(COLLEGE_LOGO_PATH):
+        cols[0].image(COLLEGE_LOGO_PATH, width=80)
+    cols[1].markdown(f"## {COLLEGE_NAME}")
+    st.markdown("---")
+
+
+def render_page_footer():
+    st.markdown("---")
+    st.markdown(
+        "**Prepared by:** Prof. Amir M. Usman Wagdarikar, Head and Exam Coordinator, Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
+    )
 
 # Initialize database
 if 'db_init' not in st.session_state:
@@ -29,6 +47,7 @@ else:
 
 # Login function
 def login():
+    render_page_header()
     st.title("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -40,6 +59,7 @@ def login():
             st.rerun()
         else:
             st.error("Invalid credentials")
+    render_page_footer()
 
 # Logout
 def logout():
@@ -49,6 +69,7 @@ def logout():
 
 # Admin page
 def admin_page():
+    render_page_header()
     st.title("Admin Dashboard")
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students"])
     
@@ -234,9 +255,11 @@ def admin_page():
                     if st.button("Cancel", key="cancel_delete_student"):
                         del st.session_state.delete_student_id
                         st.rerun()
+    render_page_footer()
 
 # Faculty page
 def faculty_page():
+    render_page_header()
     st.title("Faculty Dashboard")
     user = st.session_state.user
     tab1, tab2, tab3, tab4 = st.tabs(["Mark Attendance", "Lecture Engagement", "Upload Resources", "View Resources"])
@@ -369,9 +392,11 @@ def faculty_page():
                         database.delete_resource(resource['id'])
                         st.success("Resource deleted")
                         st.rerun()
+    render_page_footer()
 
 # Student page
 def student_page():
+    render_page_header()
     st.title("Student Dashboard")
     user = st.session_state.user
     # Assume student is linked by roll_no=username
@@ -403,6 +428,7 @@ def student_page():
                 st.write(resource['uploaded_date'])
             with cols[4]:
                 st.download_button("Download", data=bytes(resource['file_data']), file_name=resource['file_name'], key=f"download_resource_{resource['id']}")
+    render_page_footer()
 
 # Main app
 if 'user' not in st.session_state:
