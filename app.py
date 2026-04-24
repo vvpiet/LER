@@ -11,18 +11,36 @@ COLLEGE_LOGO_PATH = "college_logo.png"
 st.set_page_config(page_title="Lecture Engagement Register", layout="wide")
 
 
-def render_page_header():
-    cols = st.columns([1, 6])
-    if os.path.exists(COLLEGE_LOGO_PATH):
-        cols[0].image(COLLEGE_LOGO_PATH, width=80)
-    cols[1].markdown(f"## {COLLEGE_NAME}")
-    st.markdown("---")
+def render_page_header(subtitle: str = "Lecture Engagement & Resource Management System"):
+    with st.container():
+        cols = st.columns([1, 8, 1])
+        if os.path.exists(COLLEGE_LOGO_PATH):
+            cols[0].image(COLLEGE_LOGO_PATH, width=100)
+        else:
+            cols[0].markdown("<div style='font-size:48px; text-align:center;'>🏫</div>", unsafe_allow_html=True)
+        cols[1].markdown(
+            f"""
+            <div style='text-align:center; padding: 8px 0;'>
+                <h2 style='margin: 0; font-size: 28px; color: #0f3c78;'>{COLLEGE_NAME}</h2>
+                <p style='margin: 4px 0 4px; font-size: 16px; color: #555;'>{subtitle}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        cols[2].write("")
+    st.markdown("<hr style='border: 1px solid #ddd; margin: 0 0 16px 0;'>", unsafe_allow_html=True)
 
 
 def render_page_footer():
-    st.markdown("---")
-    st.markdown(
-        "**Prepared by:** Prof. Amir M. Usman Wagdarikar, Head and Exam Coordinator, Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
+    st.markdown("<hr style='border: 1px solid #ddd; margin: 24px 0 8px 0;'>", unsafe_allow_html=True)
+    footer_cols = st.columns([1, 8, 1])
+    footer_cols[1].markdown(
+        """
+        <div style='text-align:center; font-size:14px; color:#444;'>
+            <strong>Prepared by:</strong> Prof. Amir M. Usman Wagdarikar, Head and Exam Coordinator, Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 # Initialize database
@@ -69,7 +87,7 @@ def logout():
 
 # Admin page
 def admin_page():
-    render_page_header()
+    render_page_header("Admin Portal: Manage subjects, faculty assignments, attendance, and engagement reports")
     st.title("Admin Dashboard")
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students"])
     
@@ -259,7 +277,7 @@ def admin_page():
 
 # Faculty page
 def faculty_page():
-    render_page_header()
+    render_page_header("Faculty Portal: Mark attendance, submit lecture engagement, and upload resources")
     st.title("Faculty Dashboard")
     user = st.session_state.user
     tab1, tab2, tab3, tab4 = st.tabs(["Mark Attendance", "Lecture Engagement", "Upload Resources", "View Resources"])
@@ -396,7 +414,7 @@ def faculty_page():
 
 # Student page
 def student_page():
-    render_page_header()
+    render_page_header("Student Portal: View attendance and download faculty resources")
     st.title("Student Dashboard")
     user = st.session_state.user
     # Assume student is linked by roll_no=username
