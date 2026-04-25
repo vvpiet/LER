@@ -387,11 +387,21 @@ def faculty_page():
     
     with tab4:
         st.header("Your Resources")
-        try:
-            resources = database.get_faculty_resources(user['id'])
-        except Exception as e:
-            st.error(f"Error loading resources: {str(e)}")
-            resources = []
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Get resources uploaded by this faculty
+        cur.execute(
+            "SELECT r.id, r.file_name, r.resource_type, s.name as subject_name, r.uploaded_date "
+            "FROM resources r "
+            "JOIN subjects s ON r.subject_id = s.id "
+            "WHERE r.faculty_id = %s "
+            "ORDER BY r.uploaded_date DESC",
+            (user['id'],)
+        )
+        resources = cur.fetchall()
+        cur.close()
+        conn.close()
         
         if not resources:
             st.info("No resources uploaded yet")
@@ -403,12 +413,17 @@ def faculty_page():
                 with col2:
                     st.write(resource['resource_type'])
                 with col3:
-                    st.write(resource.get('subject_name', 'N/A'))
+                    st.write(resource['subject_name'])
                 with col4:
                     st.write(resource['uploaded_date'])
                 with col5:
                     if st.button("Delete", key=f"delete_resource_{resource['id']}"):
-                        database.delete_resource(resource['id'])
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM resources WHERE id = %s AND faculty_id = %s", (resource['id'], user['id']))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
                         st.success("Resource deleted")
                         st.rerun()
     render_page_footer()
