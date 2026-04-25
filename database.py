@@ -77,6 +77,15 @@ def create_tables():
             resource_type VARCHAR(50) NOT NULL,
             uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS resources (
+            id SERIAL PRIMARY KEY,
+            faculty_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+            file_name VARCHAR(255) NOT NULL,
+            file_data BYTEA NOT NULL,
+            resource_type VARCHAR(50) NOT NULL,
+            uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     ''')
     conn.commit()
     cur.close()
@@ -123,17 +132,15 @@ def authenticate_user(username, password):
 
 # Faculty resource functions
 def upload_resource(faculty_id, subject_id, file_name, file_data, resource_type):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('INSERT INTO faculty_resources (faculty_id, subject_id, file_name, file_data, resource_type, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
-                    (faculty_id, subject_id, file_name, file_data, resource_type, file_name.split('.')[-1]))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Error uploading resource: {e}")
-        raise
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO resources (faculty_id, subject_id, file_name, file_data, resource_type) VALUES (%s, %s, %s, %s, %s)",
+        (faculty_id, subject_id, file_name, file_data, resource_type)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def get_faculty_resources(faculty_id, subject_id=None):
     try:
@@ -165,26 +172,21 @@ def store_lecture_engagement(faculty_id, subject_id, date, topic_covered, lectur
 
 
 def get_student_resources(roll_no):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute('''
-            SELECT fr.id, fr.file_name, fr.file_data, fr.resource_type, fr.uploaded_date,
-                   s.name AS subject_name, u.name AS faculty_name
-            FROM faculty_resources fr
-            JOIN subjects s ON fr.subject_id = s.id
-            JOIN students st ON s.class_id = st.class_id
-            JOIN users u ON fr.faculty_id = u.id
-            WHERE st.roll_no = %s
-            ORDER BY fr.uploaded_date DESC
-        ''', (roll_no,))
-        resources = cur.fetchall()
-        cur.close()
-        conn.close()
-        return resources if resources else []
-    except Exception as e:
-        print(f"Error getting student resources: {e}")
-        return []
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        "SELECT r.id, r.file_name, r.resource_type, s.name as subject_name, r.uploaded_date, r.file_data "
+        "FROM resources r "
+        "JOIN subjects s ON r.subject_id = s.id "
+        "JOIN students st ON st.class_id = s.class_id "
+        "WHERE st.roll_no = %s "
+        "ORDER BY r.uploaded_date DESC",
+        (roll_no,)
+    )
+    resources = cur.fetchall()
+    cur.close()
+    conn.close()
+    return resources if resources else []
 
 
 def delete_resource(resource_id):
