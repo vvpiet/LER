@@ -337,12 +337,13 @@ def faculty_page():
             subject_id = subject_dict[selected_subject]
             
             date = st.date_input("Date", key="eng_date")
+            eng_time = st.time_input("Lecture Time", key="eng_time")
             topic = st.text_area("Topic Covered")
             lecture_num = st.number_input("Lecture Number", min_value=1)
             syllabus_pct = st.number_input("% Syllabus Covered", min_value=0.0, max_value=100.0)
             
-            # Get attendance records for that date, subject, faculty
-            cur.execute("SELECT st.roll_no, a.present FROM attendance a JOIN students st ON a.student_id = st.id WHERE a.subject_id = %s AND a.faculty_id = %s AND a.date = %s ORDER BY st.roll_no", (subject_id, user['id'], date))
+            # Get attendance records for that SPECIFIC lecture (date + time)
+            cur.execute("SELECT st.roll_no, a.present FROM attendance a JOIN students st ON a.student_id = st.id WHERE a.subject_id = %s AND a.faculty_id = %s AND a.date = %s AND a.time = %s ORDER BY st.roll_no", (subject_id, user['id'], date, eng_time))
             att_records = cur.fetchall()
             total_students = len(att_records)
             present = sum(1 for a in att_records if a['present'])
