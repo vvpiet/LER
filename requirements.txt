@@ -3,3 +3,4 @@ pandas
 psycopg2-binary
 fpdf2
 python-dotenv
+bcrypt
