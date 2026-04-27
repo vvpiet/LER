@@ -195,8 +195,68 @@ def generate_maharashtra_gradecard(student_data, grades_data):
     pdf.cell(0, 5, "Controller of Examination", align="R", ln=True)
     pdf.cell(0, 5, datetime.now().strftime("%d-%m-%Y"), align="R")
     
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+    pdf_bytes = pdf.output(dest='S')
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode('latin-1')
+    elif isinstance(pdf_bytes, bytearray):
+        pdf_bytes = bytes(pdf_bytes)
     return pdf_bytes
+
+
+def generate_gradecard_docx(student_data, grades_data):
+    try:
+        from docx import Document  # type: ignore[import]
+    except ImportError:
+        raise ImportError("python-docx is required to generate Word documents. Install it with 'pip install python-docx'.")
+
+    doc = Document()
+    doc.add_heading('Grade Card', level=1)
+    doc.add_paragraph(f"Name: {student_data['name']}")
+    doc.add_paragraph(f"Roll No: {student_data['roll_no']}")
+    doc.add_paragraph(f"Class: {student_data['class']}")
+    doc.add_paragraph(f"Semester: {student_data['semester']}")
+    doc.add_paragraph(f"Course: {student_data['course']}")
+    doc.add_paragraph(f"Date: {datetime.now().strftime('%d-%m-%Y')}")
+
+    table = doc.add_table(rows=1, cols=9)
+    table.style = 'Table Grid'
+    hdr_cells = table.rows[0].cells
+    headers = ['Sr', 'Subject', 'Int', 'End', 'Total', 'Grade', 'Cr', 'GP', 'CP']
+    for idx, header in enumerate(headers):
+        hdr_cells[idx].text = header
+
+    total_cp = 0
+    total_cr = 0
+    for idx, row in enumerate(grades_data, 1):
+        row_cells = table.add_row().cells
+        row_cells[0].text = str(idx)
+        row_cells[1].text = row['subject']
+        row_cells[2].text = str(row['internal'])
+        row_cells[3].text = str(row['end'])
+        row_cells[4].text = str(row['total'])
+        row_cells[5].text = row['grade']
+        row_cells[6].text = str(row['credits'])
+        row_cells[7].text = str(row['gp'])
+        row_cells[8].text = str(row['cp'])
+        total_cp += row['cp']
+        total_cr += row['credits']
+
+    doc.add_paragraph('')
+    doc.add_paragraph(f'Total Credits: {total_cr}')
+    sgpa = round(total_cp / total_cr, 2) if total_cr > 0 else 0
+    doc.add_paragraph(f'SGPA: {sgpa}')
+    doc.add_paragraph(f'Total Credit Points: {total_cp}')
+    doc.add_paragraph(f"Result: {'PASS' if sgpa >= 4.0 else 'FAIL'}")
+
+    doc.add_paragraph('')
+    doc.add_paragraph('Grade Scale:')
+    doc.add_paragraph('O(10): 90-100   A+(9): 80-89   A(8): 70-79')
+    doc.add_paragraph('B+(7): 60-69   B(6): 50-59   C(5): 40-49')
+    doc.add_paragraph('D(4): 35-39   F(0): <35')
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 # Initialize database
 if 'db_init' not in st.session_state:
@@ -559,6 +619,17 @@ def admin_page():
                     "application/pdf",
                     key="admin_download_gradecard"
                 )
+                try:
+                    word_bytes = generate_gradecard_docx(student_data, grades_data)
+                    st.download_button(
+                        "📥 Download Generated Grade Card DOCX",
+                        word_bytes,
+                        f"gradecard_{student['roll_no']}.docx",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="admin_download_gradecard_docx"
+                    )
+                except ImportError as e:
+                    st.warning(str(e))
 
     render_page_footer()
 
@@ -902,6 +973,17 @@ def student_page():
                     "application/pdf",
                     key="download_gradecard"
                 )
+                try:
+                    word_bytes = generate_gradecard_docx(student_data, grades_data)
+                    st.download_button(
+                        "📥 Download Grade Card DOCX",
+                        word_bytes,
+                        f"gradecard_{student_info['roll_no']}.docx",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="download_gradecard_docx"
+                    )
+                except ImportError as e:
+                    st.warning(str(e))
                 save_gradecard(student_info['id'], pdf_bytes, student_data['semester'], student_data['course'])
                 st.success("✅ Grade card generated successfully and saved for student download.")
         else:
