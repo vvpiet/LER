@@ -195,7 +195,7 @@ def generate_maharashtra_gradecard(student_data, grades_data):
     pdf.cell(0, 5, "Controller of Examination", align="R", ln=True)
     pdf.cell(0, 5, datetime.now().strftime("%d-%m-%Y"), align="R")
     
-    pdf_bytes = pdf.output()
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
     return pdf_bytes
 
 # Initialize database
@@ -244,7 +244,7 @@ def logout():
 def admin_page():
     render_page_header("Admin Portal: Manage subjects, faculty assignments, attendance, and engagement reports")
     st.title("Admin Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students", "Defaulter Students"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students", "Defaulter Students", "Generate Grade Card"])
     
     with tab1:
         st.header("Upload Student List")
@@ -463,7 +463,103 @@ def admin_page():
                         st.success("Alert notifications would be sent to all defaulter students!")
                     except Exception as e:
                         st.error(f"Error sending alerts: {str(e)}")
-    
+
+    with tab9:
+        st.header("Generate Grade Card")
+        students = get_all_students()
+        if not students:
+            st.warning("No students available")
+        else:
+            student_options = [f"{s['roll_no']} - {s['name']} ({s['class_name']})" for s in students]
+            student_dict = {option: s for option, s in zip(student_options, students)}
+            selected_student = st.selectbox("Select Student", student_options, key="admin_gradecard_student")
+            student = student_dict[selected_student]
+
+            st.write(f"**Name:** {student['name']}")
+            st.write(f"**Roll No:** {student['roll_no']}")
+            st.write(f"**Class:** {student['class_name']}")
+
+            semester = st.text_input("Semester", value="IV", key="admin_gradecard_semester")
+            course = st.text_input("Course", value="B.Tech", key="admin_gradecard_course")
+            subject_count = st.number_input("Number of subjects", 1, 10, 6, key="admin_gradecard_subject_count")
+            grades_data = []
+
+            for i in range(1, subject_count + 1):
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    subject = st.text_input(f"Subject Name {i}", key=f"admin_subject_{i}")
+                with col2:
+                    subject_type = st.selectbox(f"Subject Type {i}", ["Theory", "Practical"], key=f"admin_subject_type_{i}")
+                with col3:
+                    if subject_type == "Practical":
+                        internal = st.number_input(f"Internal {i} (out of 60)", 0, 60, key=f"admin_internal_{i}")
+                    else:
+                        internal = st.number_input(f"Internal {i} (out of 40)", 0, 40, key=f"admin_internal_{i}")
+                with col4:
+                    if subject_type == "Practical":
+                        end = st.number_input(f"External {i} (out of 40)", 0, 40, key=f"admin_end_{i}")
+                    else:
+                        end = st.number_input(f"External {i} (out of 60)", 0, 60, key=f"admin_end_{i}")
+                with col5:
+                    credits = st.number_input(f"Credits {i}", 1, 6, 4, key=f"admin_credits_{i}")
+                    total = internal + end
+                    if total >= 90:
+                        grade = "O"
+                        gp = 10
+                    elif total >= 80:
+                        grade = "A+"
+                        gp = 9
+                    elif total >= 70:
+                        grade = "A"
+                        gp = 8
+                    elif total >= 60:
+                        grade = "B+"
+                        gp = 7
+                    elif total >= 50:
+                        grade = "B"
+                        gp = 6
+                    elif total >= 40:
+                        grade = "C"
+                        gp = 5
+                    elif total >= 35:
+                        grade = "D"
+                        gp = 4
+                    else:
+                        grade = "F"
+                        gp = 0
+                    st.write(f"**Grade: {grade}**")
+
+                if subject:
+                    grades_data.append({
+                        "subject": subject,
+                        "internal": internal,
+                        "end": end,
+                        "total": total,
+                        "grade": grade,
+                        "credits": credits,
+                        "gp": gp,
+                        "cp": gp * credits
+                    })
+
+            if grades_data and st.button("Generate and Save Grade Card", key="admin_generate_gradecard"):
+                student_data = {
+                    "name": student['name'],
+                    "roll_no": student['roll_no'],
+                    "class": student['class_name'],
+                    "semester": semester,
+                    "course": course
+                }
+                pdf_bytes = generate_maharashtra_gradecard(student_data, grades_data)
+                save_gradecard(student['id'], pdf_bytes, semester, course)
+                st.success("✅ Grade card generated and saved for student download.")
+                st.download_button(
+                    "📥 Download Generated Grade Card",
+                    pdf_bytes,
+                    f"gradecard_{student['roll_no']}.pdf",
+                    "application/pdf",
+                    key="admin_download_gradecard"
+                )
+
     render_page_footer()
 
 # Faculty page
@@ -693,7 +789,7 @@ def student_page():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            "SELECT s.name, s.roll_no, c.name as class_name, u.role "
+            "SELECT s.id, s.name, s.roll_no, c.name as class_name, u.role "
             "FROM students s "
             "JOIN classes c ON s.class_id = c.id "
             "JOIN users u ON u.username = %s "
@@ -709,9 +805,22 @@ def student_page():
             st.write(f"**Roll No:** {student_info['roll_no']}")
             st.write(f"**Class:** {student_info['class_name']}")
             
+            gradecard_record = get_gradecard(student_info['id'])
+            if gradecard_record:
+                st.success("✅ Admin-generated grade card is available for download.")
+                st.download_button(
+                    "📥 Download Approved Grade Card",
+                    gradecard_record['pdf_file'],
+                    f"gradecard_{student_info['roll_no']}.pdf",
+                    "application/pdf",
+                    key="download_stored_gradecard"
+                )
+                st.info("If you want to regenerate the grade card manually, fill the form below.")
+            else:
+                st.info("No admin-generated grade card found yet. You can create one manually below.")
+
             st.subheader("Enter Your Grades")
             
-            # Allow students to input or view their grades
             num_subjects = st.number_input("Number of Subjects", 1, 10, 4, key="num_subjects")
             
             grades_data = []
@@ -722,13 +831,19 @@ def student_page():
                 with col1:
                     subject = st.text_input(f"Subject Name {i}", key=f"subject_{i}")
                 with col2:
-                    internal = st.number_input(f"Internal {i}", 0, 20, key=f"internal_{i}")
+                    subject_type = st.selectbox(f"Subject Type {i}", ["Theory", "Practical"], key=f"subject_type_{i}")
                 with col3:
-                    end = st.number_input(f"End Sem {i}", 0, 100, key=f"end_{i}")
+                    if subject_type == "Practical":
+                        internal = st.number_input(f"Internal {i} (out of 60)", 0, 60, key=f"internal_{i}")
+                    else:
+                        internal = st.number_input(f"Internal {i} (out of 40)", 0, 40, key=f"internal_{i}")
                 with col4:
-                    credits = st.number_input(f"Credits {i}", 1, 6, 4, key=f"credits_{i}")
+                    if subject_type == "Practical":
+                        end = st.number_input(f"External {i} (out of 40)", 0, 40, key=f"end_{i}")
+                    else:
+                        end = st.number_input(f"External {i} (out of 60)", 0, 60, key=f"end_{i}")
                 with col5:
-                    # Calculate grade based on total
+                    credits = st.number_input(f"Credits {i}", 1, 6, 4, key=f"credits_{i}")
                     total = internal + end
                     if total >= 90:
                         grade = "O"
@@ -771,6 +886,7 @@ def student_page():
             
             if grades_data and st.button("Generate Grade Card", key="generate_gradecard"):
                 student_data = {
+                    "id": student_info['id'],
                     "name": student_info['name'],
                     "roll_no": student_info['roll_no'],
                     "class": student_info['class_name'],
@@ -786,7 +902,8 @@ def student_page():
                     "application/pdf",
                     key="download_gradecard"
                 )
-                st.success("✅ Grade card generated successfully!")
+                save_gradecard(student_info['id'], pdf_bytes, student_data['semester'], student_data['course'])
+                st.success("✅ Grade card generated successfully and saved for student download.")
         else:
             st.warning("Student information not found")
     

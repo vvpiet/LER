@@ -86,6 +86,15 @@ def create_tables():
             resource_type VARCHAR(50) NOT NULL,
             uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS gradecards (
+            id SERIAL PRIMARY KEY,
+            student_id INTEGER REFERENCES students(id),
+            semester VARCHAR(20),
+            course VARCHAR(50),
+            pdf_file BYTEA NOT NULL,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id, semester)
+        );
     ''')
     conn.commit()
     cur.close()
@@ -96,6 +105,17 @@ def ensure_schema():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("ALTER TABLE lecture_engagement ADD COLUMN IF NOT EXISTS absent_roll_numbers TEXT[]")
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS gradecards (
+            id SERIAL PRIMARY KEY,
+            student_id INTEGER REFERENCES students(id),
+            semester VARCHAR(20),
+            course VARCHAR(50),
+            pdf_file BYTEA NOT NULL,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id, semester)
+        );
+    ''')
     conn.commit()
     cur.close()
     conn.close()
@@ -205,6 +225,33 @@ def get_resource_file(resource_id):
     cur.close()
     conn.close()
     return resource
+
+def save_gradecard(student_id, pdf_data, semester, course):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        '''INSERT INTO gradecards (student_id, semester, course, pdf_file)
+           VALUES (%s, %s, %s, %s)
+           ON CONFLICT (student_id, semester)
+           DO UPDATE SET pdf_file = EXCLUDED.pdf_file, course = EXCLUDED.course, generated_at = CURRENT_TIMESTAMP''',
+        (student_id, semester, course, psycopg2.Binary(pdf_data))
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_gradecard(student_id, semester=None):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    if semester:
+        cur.execute('SELECT pdf_file, semester, course, generated_at FROM gradecards WHERE student_id = %s AND semester = %s', (student_id, semester))
+    else:
+        cur.execute('SELECT pdf_file, semester, course, generated_at FROM gradecards WHERE student_id = %s ORDER BY generated_at DESC LIMIT 1', (student_id,))
+    gradecard = cur.fetchone()
+    cur.close()
+    conn.close()
+    return gradecard
 
 # Student management functions
 def get_all_students():
