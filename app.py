@@ -810,7 +810,7 @@ def student_page():
                 "SELECT sub.name as subject, "
                 "COUNT(*) as total, "
                 "SUM(CASE WHEN a.present THEN 1 ELSE 0 END) as present, "
-                "ROUND((SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100, 2) as attendance_pct "
+                "ROUND(100.0 * SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 2) as attendance_pct "
                 "FROM attendance a "
                 "JOIN subjects sub ON a.subject_id = sub.id "
                 "WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s) "
