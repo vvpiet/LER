@@ -249,6 +249,12 @@ def get_gradecard(student_id, semester=None):
     else:
         cur.execute('SELECT pdf_file, semester, course, generated_at FROM gradecards WHERE student_id = %s ORDER BY generated_at DESC LIMIT 1', (student_id,))
     gradecard = cur.fetchone()
+    if gradecard and gradecard.get('pdf_file') is not None:
+        pdf_file = gradecard['pdf_file']
+        if isinstance(pdf_file, memoryview):
+            gradecard['pdf_file'] = pdf_file.tobytes()
+        elif isinstance(pdf_file, bytearray):
+            gradecard['pdf_file'] = bytes(pdf_file)
     cur.close()
     conn.close()
     return gradecard
