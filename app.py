@@ -3,6 +3,9 @@ import pandas as pd
 import database
 from database import *
 import os
+from datetime import datetime, timedelta
+from fpdf import FPDF
+import io
 
 COLLEGE_NAME = "Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
 COLLEGE_LOGO_PATH = "college_logo.png"
@@ -42,6 +45,158 @@ def render_page_footer():
         """,
         unsafe_allow_html=True,
     )
+
+def check_weekly_attendance(student_id, subject_id, weeks=4):
+    """Check attendance percentage for last N weeks"""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    start_date = datetime.now() - timedelta(weeks=weeks)
+    
+    cur.execute(
+        "SELECT COUNT(*) as total, SUM(CASE WHEN present THEN 1 ELSE 0 END) as present "
+        "FROM attendance "
+        "WHERE student_id = %s AND subject_id = %s AND date >= %s",
+        (student_id, subject_id, start_date.date())
+    )
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if result['total'] == 0:
+        return 0
+    
+    attendance_percentage = (result['present'] / result['total']) * 100
+    return attendance_percentage
+
+def get_defaulter_students(threshold=60, weeks=4):
+    """Get students with attendance below threshold"""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    start_date = datetime.now() - timedelta(weeks=weeks)
+    
+    cur.execute(
+        "SELECT DISTINCT s.id, s.name, s.roll_no, c.name as class_name, "
+        "sub.id as subject_id, sub.name as subject_name, "
+        "(SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 as attendance_pct "
+        "FROM students s "
+        "JOIN classes c ON s.class_id = c.id "
+        "JOIN attendance a ON s.id = a.student_id "
+        "JOIN subjects sub ON a.subject_id = sub.id "
+        "WHERE a.date >= %s "
+        "GROUP BY s.id, s.name, s.roll_no, c.name, sub.id, sub.name "
+        "HAVING (SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 < %s "
+        "ORDER BY s.roll_no",
+        (start_date.date(), threshold)
+    )
+    defaulters = cur.fetchall()
+    cur.close()
+    conn.close()
+    return defaulters
+
+def generate_maharashtra_gradecard(student_data, grades_data):
+    """Generate Maharashtra University style grade card PDF"""
+    
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_margins(12, 10, 12)
+    
+    # Header
+    pdf.set_font("Arial", "B", 13)
+    pdf.cell(0, 8, "VIDYA VIKAS PRATISHTHAN INSTITUTE OF ENGINEERING & TECHNOLOGY", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(0, 5, "Solapur, Maharashtra", ln=True, align="C")
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 7, "STATEMENT OF MARKS / GRADES", ln=True, align="C")
+    
+    pdf.ln(2)
+    
+    # Student Information
+    pdf.set_font("Arial", "", 9)
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.4)
+    
+    info_data = [
+        [f"Name: {student_data['name']}", f"Roll No: {student_data['roll_no']}"],
+        [f"Class: {student_data['class']}", f"Semester: {student_data['semester']}"],
+        [f"Course: {student_data['course']}", f"Date: {datetime.now().strftime('%d-%m-%Y')}"]
+    ]
+    
+    for row in info_data:
+        pdf.cell(95, 6, row[0], border=1)
+        pdf.cell(95, 6, row[1], border=1, ln=True)
+    
+    pdf.ln(3)
+    
+    # Table Header
+    pdf.set_font("Arial", "B", 8.5)
+    col_widths = [9, 42, 11, 11, 11, 10, 10, 10, 10]
+    headers = ["Sr", "Subject", "Int", "End", "Total", "Grade", "Cr", "GP", "CP"]
+    
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 7, header, border=1, align="C")
+    pdf.ln()
+    
+    # Table Data
+    pdf.set_font("Arial", "", 8.5)
+    total_cp = 0
+    total_cr = 0
+    
+    for i, row in enumerate(grades_data, 1):
+        pdf.cell(col_widths[0], 7, str(i), border=1, align="C")
+        pdf.cell(col_widths[1], 7, row["subject"][:28], border=1)
+        pdf.cell(col_widths[2], 7, str(row["internal"]), border=1, align="C")
+        pdf.cell(col_widths[3], 7, str(row["end"]), border=1, align="C")
+        pdf.cell(col_widths[4], 7, str(row["total"]), border=1, align="C")
+        pdf.cell(col_widths[5], 7, row["grade"], border=1, align="C")
+        pdf.cell(col_widths[6], 7, str(row["credits"]), border=1, align="C")
+        pdf.cell(col_widths[7], 7, str(row["gp"]), border=1, align="C")
+        pdf.cell(col_widths[8], 7, str(row["cp"]), border=1, align="C")
+        pdf.ln()
+        
+        total_cp += row["cp"]
+        total_cr += row["credits"]
+    
+    # Summary
+    pdf.ln(4)
+    pdf.set_font("Arial", "B", 9)
+    sgpa = round(total_cp / total_cr, 2) if total_cr > 0 else 0
+    
+    pdf.cell(95, 6, f"Total Credits: {total_cr}", border=0)
+    pdf.cell(95, 6, f"SGPA: {sgpa}", border=0, ln=True)
+    pdf.cell(95, 6, f"Total Credit Points: {total_cp}", border=0)
+    pdf.cell(95, 6, f"Result: {'PASS' if sgpa >= 4.0 else 'FAIL'}", border=0, ln=True)
+    
+    # Grade Scale
+    pdf.ln(4)
+    pdf.set_font("Arial", "B", 8)
+    pdf.cell(0, 5, "GRADE SCALE:", ln=True)
+    
+    pdf.set_font("Arial", "", 7)
+    grades_scale = [
+        ["O(10)", "90-100", "A+(9)", "80-89", "A(8)", "70-79"],
+        ["B+(7)", "60-69", "B(6)", "50-59", "C(5)", "40-49"],
+        ["D(4)", "35-39", "F(0)", "<35", "", ""]
+    ]
+    
+    for grade_row in grades_scale:
+        for grade in grade_row:
+            pdf.cell(31.5, 4.5, grade, border=1, align="C")
+        pdf.ln()
+    
+    # Footer
+    pdf.ln(6)
+    pdf.set_font("Arial", "", 8)
+    pdf.cell(0, 5, "This is a computer-generated statement and does not require signature.", ln=True, align="C")
+    
+    pdf.ln(2)
+    pdf.set_font("Arial", "", 9)
+    pdf.cell(0, 5, "Controller of Examination", align="R", ln=True)
+    pdf.cell(0, 5, datetime.now().strftime("%d-%m-%Y"), align="R")
+    
+    pdf_bytes = pdf.output()
+    return pdf_bytes
 
 # Initialize database
 if 'db_init' not in st.session_state:
@@ -89,7 +244,7 @@ def logout():
 def admin_page():
     render_page_header("Admin Portal: Manage subjects, faculty assignments, attendance, and engagement reports")
     st.title("Admin Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students", "Defaulter Students"])
     
     with tab1:
         st.header("Upload Student List")
@@ -273,6 +428,42 @@ def admin_page():
                     if st.button("Cancel", key="cancel_delete_student"):
                         del st.session_state.delete_student_id
                         st.rerun()
+    
+    with tab8:
+        st.header("Defaulter Students (Attendance < 60%)")
+        weeks = st.slider("Check last N weeks", 1, 16, 4, key="defaulter_weeks")
+        
+        if st.button("Get Defaulter List", key="get_defaulters"):
+            defaulters = get_defaulter_students(threshold=60, weeks=weeks)
+            
+            if not defaulters:
+                st.success(f"✅ No defaulter students found in last {weeks} weeks!")
+            else:
+                st.warning(f"⚠️ Found {len(defaulters)} defaulter student(s)")
+                
+                # Display in table format
+                df_defaulters = pd.DataFrame([
+                    {
+                        'Roll No': d['roll_no'],
+                        'Name': d['name'],
+                        'Class': d['class_name'],
+                        'Subject': d['subject_name'],
+                        'Attendance %': f"{d['attendance_pct']:.2f}%"
+                    }
+                    for d in defaulters
+                ])
+                st.dataframe(df_defaulters, use_container_width=True)
+                
+                # Send alerts
+                if st.button("Send Alert Messages to Defaulters", key="send_alerts"):
+                    try:
+                        for defaulter in defaulters:
+                            # You can integrate with WhatsApp API (Twilio) here
+                            st.info(f"Alert would be sent to {defaulter['name']} ({defaulter['roll_no']}) - Attendance: {defaulter['attendance_pct']:.2f}%")
+                        st.success("Alert notifications would be sent to all defaulter students!")
+                    except Exception as e:
+                        st.error(f"Error sending alerts: {str(e)}")
+    
     render_page_footer()
 
 # Faculty page
@@ -430,38 +621,175 @@ def faculty_page():
 
 # Student page
 def student_page():
-    render_page_header("Student Portal: View attendance and download faculty resources")
+    render_page_header("Student Portal: View attendance, download faculty resources, and download grade card")
     st.title("Student Dashboard")
     user = st.session_state.user
-    # Assume student is linked by roll_no=username
-    st.header("Your Attendance")
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s)", conn, params=(user['username'],))
-    conn.close()
-    st.dataframe(df)
+    tab1, tab2, tab3 = st.tabs(["View Attendance", "Download Resources", "Download Grade Card"])
+    
+    with tab1:
+        st.header("Your Attendance")
+        conn = get_db_connection()
+        df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s) ORDER BY a.date DESC", conn, params=(user['username'],))
+        conn.close()
+        
+        if df.empty:
+            st.info("No attendance records found")
+        else:
+            # Calculate attendance percentage by subject
+            st.subheader("Attendance Summary")
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                "SELECT sub.name as subject, "
+                "COUNT(*) as total, "
+                "SUM(CASE WHEN a.present THEN 1 ELSE 0 END) as present, "
+                "ROUND((SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100, 2) as attendance_pct "
+                "FROM attendance a "
+                "JOIN subjects sub ON a.subject_id = sub.id "
+                "WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s) "
+                "GROUP BY sub.name "
+                "ORDER BY sub.name",
+                (user['username'],)
+            )
+            summary = cur.fetchall()
+            cur.close()
+            conn.close()
+            
+            for row in summary:
+                color = "🟢" if row['attendance_pct'] >= 75 else "🟡" if row['attendance_pct'] >= 60 else "🔴"
+                st.write(f"{color} {row['subject']}: {row['attendance_pct']}% ({row['present']}/{row['total']})")
+            
+            st.subheader("Detailed Attendance")
+            st.dataframe(df, use_container_width=True)
 
-    st.header("Available Resources")
-    try:
-        resources = database.get_student_resources(user['username'])
-    except Exception as e:
-        st.error(f"Error loading resources: {str(e)}")
-        resources = []
+    with tab2:
+        st.header("Available Resources")
+        try:
+            resources = database.get_student_resources(user['username'])
+        except Exception as e:
+            st.error(f"Error loading resources: {str(e)}")
+            resources = []
 
-    if not resources:
-        st.info("No resources available yet")
-    else:
-        for resource in resources:
-            cols = st.columns([2, 2, 2, 2, 1])
-            with cols[0]:
-                st.write(resource['file_name'])
-            with cols[1]:
-                st.write(resource['subject_name'])
-            with cols[2]:
-                st.write(resource['resource_type'])
-            with cols[3]:
-                st.write(resource['uploaded_date'])
-            with cols[4]:
-                st.download_button("Download", data=bytes(resource['file_data']), file_name=resource['file_name'], key=f"download_resource_{resource['id']}")
+        if not resources:
+            st.info("No resources available yet")
+        else:
+            for resource in resources:
+                cols = st.columns([2, 2, 2, 2, 1])
+                with cols[0]:
+                    st.write(resource['file_name'])
+                with cols[1]:
+                    st.write(resource['subject_name'])
+                with cols[2]:
+                    st.write(resource['resource_type'])
+                with cols[3]:
+                    st.write(resource['uploaded_date'])
+                with cols[4]:
+                    st.download_button("Download", data=bytes(resource['file_data']), file_name=resource['file_name'], key=f"download_resource_{resource['id']}")
+    
+    with tab3:
+        st.header("Download Grade Card")
+        
+        # Get student details
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            "SELECT s.name, s.roll_no, c.name as class_name, u.role "
+            "FROM students s "
+            "JOIN classes c ON s.class_id = c.id "
+            "JOIN users u ON u.username = %s "
+            "WHERE s.roll_no = %s",
+            (user['username'], user['username'])
+        )
+        student_info = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if student_info:
+            st.write(f"**Name:** {student_info['name']}")
+            st.write(f"**Roll No:** {student_info['roll_no']}")
+            st.write(f"**Class:** {student_info['class_name']}")
+            
+            st.subheader("Enter Your Grades")
+            
+            # Allow students to input or view their grades
+            num_subjects = st.number_input("Number of Subjects", 1, 10, 4, key="num_subjects")
+            
+            grades_data = []
+            for i in range(num_subjects):
+                st.markdown(f"**Subject {i+1}**")
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    subject = st.text_input(f"Subject Name {i}", key=f"subject_{i}")
+                with col2:
+                    internal = st.number_input(f"Internal {i}", 0, 20, key=f"internal_{i}")
+                with col3:
+                    end = st.number_input(f"End Sem {i}", 0, 100, key=f"end_{i}")
+                with col4:
+                    credits = st.number_input(f"Credits {i}", 1, 6, 4, key=f"credits_{i}")
+                with col5:
+                    # Calculate grade based on total
+                    total = internal + end
+                    if total >= 90:
+                        grade = "O"
+                        gp = 10
+                    elif total >= 80:
+                        grade = "A+"
+                        gp = 9
+                    elif total >= 70:
+                        grade = "A"
+                        gp = 8
+                    elif total >= 60:
+                        grade = "B+"
+                        gp = 7
+                    elif total >= 50:
+                        grade = "B"
+                        gp = 6
+                    elif total >= 40:
+                        grade = "C"
+                        gp = 5
+                    elif total >= 35:
+                        grade = "D"
+                        gp = 4
+                    else:
+                        grade = "F"
+                        gp = 0
+                    
+                    st.write(f"**Grade: {grade}**")
+                
+                if subject:
+                    grades_data.append({
+                        "subject": subject,
+                        "internal": internal,
+                        "end": end,
+                        "total": internal + end,
+                        "grade": grade,
+                        "credits": credits,
+                        "gp": gp,
+                        "cp": gp * credits
+                    })
+            
+            if grades_data and st.button("Generate Grade Card", key="generate_gradecard"):
+                student_data = {
+                    "name": student_info['name'],
+                    "roll_no": student_info['roll_no'],
+                    "class": student_info['class_name'],
+                    "semester": "IV",
+                    "course": "B.Tech"
+                }
+                
+                pdf_bytes = generate_maharashtra_gradecard(student_data, grades_data)
+                st.download_button(
+                    "📥 Download Grade Card PDF",
+                    pdf_bytes,
+                    f"gradecard_{student_info['roll_no']}.pdf",
+                    "application/pdf",
+                    key="download_gradecard"
+                )
+                st.success("✅ Grade card generated successfully!")
+        else:
+            st.warning("Student information not found")
+    
     render_page_footer()
 
 # Main app
