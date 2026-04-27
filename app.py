@@ -8,6 +8,7 @@ from fpdf import FPDF
 import io
 
 COLLEGE_NAME = "Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
+DEPARTMENT_NAME = "Department of Computer Science and Engineering"
 COLLEGE_LOGO_PATH = "college_logo.png"
 
 # Set page config
@@ -101,15 +102,20 @@ def generate_maharashtra_gradecard(student_data, grades_data):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     pdf.set_margins(12, 10, 12)
-    
+
+    if os.path.exists(COLLEGE_LOGO_PATH):
+        pdf.image(COLLEGE_LOGO_PATH, x=12, y=10, w=24)
+
     # Header
     pdf.set_font("Arial", "B", 13)
-    pdf.cell(0, 8, "VIDYA VIKAS PRATISHTHAN INSTITUTE OF ENGINEERING & TECHNOLOGY", ln=True, align="C")
+    pdf.cell(0, 8, COLLEGE_NAME, ln=True, align="C")
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 7, student_data.get('department', DEPARTMENT_NAME), ln=True, align="C")
     pdf.set_font("Arial", "", 10)
     pdf.cell(0, 5, "Solapur, Maharashtra", ln=True, align="C")
     pdf.set_font("Arial", "B", 11)
     pdf.cell(0, 7, "STATEMENT OF MARKS / GRADES", ln=True, align="C")
-    
+
     pdf.ln(2)
     
     # Student Information
@@ -119,8 +125,9 @@ def generate_maharashtra_gradecard(student_data, grades_data):
     
     info_data = [
         [f"Name: {student_data['name']}", f"Roll No: {student_data['roll_no']}"],
-        [f"Class: {student_data['class']}", f"Semester: {student_data['semester']}"],
-        [f"Course: {student_data['course']}", f"Date: {datetime.now().strftime('%d-%m-%Y')}"]
+        [f"PRN: {student_data.get('prn', '')}", f"Class: {student_data['class']}"],
+        [f"Semester: {student_data['semester']}", f"Course: {student_data['course']}"],
+        [f"Exam Event: {student_data.get('exam_event', '')}", f"Date: {datetime.now().strftime('%d-%m-%Y')}"]
     ]
     
     for row in info_data:
@@ -213,8 +220,10 @@ def generate_gradecard_docx(student_data, grades_data):
     doc.add_heading('Grade Card', level=1)
     doc.add_paragraph(f"Name: {student_data['name']}")
     doc.add_paragraph(f"Roll No: {student_data['roll_no']}")
+    doc.add_paragraph(f"PRN: {student_data.get('prn', '')}")
     doc.add_paragraph(f"Class: {student_data['class']}")
     doc.add_paragraph(f"Semester: {student_data['semester']}")
+    doc.add_paragraph(f"Exam Event: {student_data.get('exam_event', '')}")
     doc.add_paragraph(f"Course: {student_data['course']}")
     doc.add_paragraph(f"Date: {datetime.now().strftime('%d-%m-%Y')}")
 
@@ -308,7 +317,7 @@ def admin_page():
     
     with tab1:
         st.header("Upload Student List")
-        uploaded_file = st.file_uploader("Upload CSV (roll_no, name, class_name)", type="csv")
+        uploaded_file = st.file_uploader("Upload CSV (roll_no, name, class_name, prn)", type="csv")
         if uploaded_file:
             df = pd.read_csv(uploaded_file)
             if st.button("Upload", key="upload_students"):
@@ -318,8 +327,9 @@ def admin_page():
                     # Get class_id
                     cur.execute("SELECT id FROM classes WHERE name = %s", (row['class_name'],))
                     class_id = cur.fetchone()[0]
-                    cur.execute("INSERT INTO students (roll_no, name, class_id) VALUES (%s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
-                                (row['roll_no'], row['name'], class_id))
+                    prn_value = row['prn'] if 'prn' in row and not pd.isna(row['prn']) else None
+                    cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
+                                (row['roll_no'], prn_value, row['name'], class_id))
                     # Create user
                     cur.execute("INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, 'student', %s, '') ON CONFLICT (username) DO NOTHING",
                                 (row['roll_no'], hash_password('student123'), row['name']))
@@ -422,16 +432,18 @@ def admin_page():
         password = st.text_input("Password", type="password", key="admin_create_password")
         name = st.text_input("Name", key="admin_create_name")
         email = st.text_input("Email", key="admin_create_email")
+        prn = ""
         if role == "student":
             class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"], key="admin_create_user_class")
+            prn = st.text_input("PRN", key="admin_create_user_prn")
         if st.button("Create", key="create_user"):
             if role == "student":
                 conn = get_db_connection()
                 cur = conn.cursor()
                 cur.execute("SELECT id FROM classes WHERE name = %s", (class_name,))
                 class_id = cur.fetchone()[0]
-                cur.execute("INSERT INTO students (roll_no, name, class_id) VALUES (%s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
-                            (username, name, class_id))
+                cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
+                            (username, prn or None, name, class_id))
                 conn.commit()
                 cur.close()
                 conn.close()
@@ -446,7 +458,7 @@ def admin_page():
         else:
             st.subheader("Student List")
             for student in students:
-                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+                col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 1, 1])
                 with col1:
                     st.write(student['roll_no'])
                 with col2:
@@ -454,9 +466,11 @@ def admin_page():
                 with col3:
                     st.write(student['class_name'])
                 with col4:
+                    st.write(student.get('prn', ''))
+                with col5:
                     if st.button("Edit", key=f"edit_student_{student['id']}"):
                         st.session_state.edit_student_id = student['id']
-                with col5:
+                with col6:
                     if st.button("Delete", key=f"delete_student_{student['id']}"):
                         st.session_state.delete_student_id = student['id']
             
@@ -467,9 +481,10 @@ def admin_page():
                 if student:
                     new_roll_no = st.text_input("Roll No", value=student['roll_no'], key="edit_roll_no")
                     new_name = st.text_input("Name", value=student['name'], key="edit_name")
+                    new_prn = st.text_input("PRN", value=student.get('prn', ''), key="edit_prn")
                     new_class = st.selectbox("Class", ["SY", "TY", "B.Tech"], index=["SY", "TY", "B.Tech"].index(student['class_name']), key="edit_class")
                     if st.button("Save Changes", key="save_student_changes"):
-                        update_student(st.session_state.edit_student_id, new_roll_no, new_name, new_class)
+                        update_student(st.session_state.edit_student_id, new_roll_no, new_prn, new_name, new_class)
                         del st.session_state.edit_student_id
                         st.success("Student updated")
                         st.rerun()
@@ -541,6 +556,9 @@ def admin_page():
 
             semester = st.text_input("Semester", value="IV", key="admin_gradecard_semester")
             course = st.text_input("Course", value="B.Tech", key="admin_gradecard_course")
+            exam_term = st.selectbox("Exam Term", ["Summer", "Winter"], key="admin_gradecard_term")
+            exam_type = st.selectbox("Exam Type", ["Regular", "Supplementary"], key="admin_gradecard_type")
+            exam_year = st.text_input("Exam Year", value=str(datetime.now().year), key="admin_gradecard_year")
             subject_count = st.number_input("Number of subjects", 1, 10, 6, key="admin_gradecard_subject_count")
             grades_data = []
 
@@ -613,10 +631,13 @@ def admin_page():
             if grades_data and st.button("Generate and Save Grade Card", key="admin_generate_gradecard"):
                 student_data = {
                     "name": student['name'],
+                    "prn": student.get('prn', ''),
                     "roll_no": student['roll_no'],
                     "class": student['class_name'],
                     "semester": semester,
-                    "course": course
+                    "course": course,
+                    "exam_event": f"{exam_term} {exam_year} {exam_type}",
+                    "department": DEPARTMENT_NAME
                 }
                 pdf_bytes = generate_maharashtra_gradecard(student_data, grades_data)
                 save_gradecard(student['id'], pdf_bytes, semester, course)
@@ -869,7 +890,7 @@ def student_page():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            "SELECT s.id, s.name, s.roll_no, c.name as class_name, u.role "
+            "SELECT s.id, s.prn, s.name, s.roll_no, c.name as class_name, u.role "
             "FROM students s "
             "JOIN classes c ON s.class_id = c.id "
             "JOIN users u ON u.username = %s "
@@ -883,6 +904,7 @@ def student_page():
         if student_info:
             st.write(f"**Name:** {student_info['name']}")
             st.write(f"**Roll No:** {student_info['roll_no']}")
+            st.write(f"**PRN:** {student_info.get('prn', '')}")
             st.write(f"**Class:** {student_info['class_name']}")
             
             gradecard_record = get_gradecard(student_info['id'])
@@ -977,10 +999,13 @@ def student_page():
                 student_data = {
                     "id": student_info['id'],
                     "name": student_info['name'],
+                    "prn": student_info.get('prn', ''),
                     "roll_no": student_info['roll_no'],
                     "class": student_info['class_name'],
                     "semester": "IV",
-                    "course": "B.Tech"
+                    "course": "B.Tech",
+                    "exam_event": "",
+                    "department": DEPARTMENT_NAME
                 }
                 
                 pdf_bytes = generate_maharashtra_gradecard(student_data, grades_data)

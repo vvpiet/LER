@@ -43,6 +43,7 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS students (
             id SERIAL PRIMARY KEY,
             roll_no VARCHAR(50) UNIQUE NOT NULL,
+            prn VARCHAR(100),
             name VARCHAR(100) NOT NULL,
             class_id INTEGER REFERENCES classes(id)
         );
@@ -105,6 +106,7 @@ def ensure_schema():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("ALTER TABLE lecture_engagement ADD COLUMN IF NOT EXISTS absent_roll_numbers TEXT[]")
+    cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS prn VARCHAR(100)")
     cur.execute('''
         CREATE TABLE IF NOT EXISTS gradecards (
             id SERIAL PRIMARY KEY,
@@ -263,19 +265,19 @@ def get_gradecard(student_id, semester=None):
 def get_all_students():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute('SELECT s.id, s.roll_no, s.name, c.name as class_name FROM students s JOIN classes c ON s.class_id = c.id ORDER BY s.roll_no')
+    cur.execute('SELECT s.id, s.roll_no, s.prn, s.name, c.name as class_name FROM students s JOIN classes c ON s.class_id = c.id ORDER BY s.roll_no')
     students = cur.fetchall()
     cur.close()
     conn.close()
     return students
 
-def update_student(student_id, roll_no, name, class_name):
+def update_student(student_id, roll_no, prn, name, class_name):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT id FROM classes WHERE name = %s', (class_name,))
     class_id = cur.fetchone()[0]
-    cur.execute('UPDATE students SET roll_no = %s, name = %s, class_id = %s WHERE id = %s',
-                (roll_no, name, class_id, student_id))
+    cur.execute('UPDATE students SET roll_no = %s, prn = %s, name = %s, class_id = %s WHERE id = %s',
+                (roll_no, prn, name, class_id, student_id))
     conn.commit()
     cur.close()
     conn.close()
