@@ -8,7 +8,7 @@ from fpdf import FPDF
 import io
 
 COLLEGE_NAME = "Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur"
-DEPARTMENT_NAME = "Department of Computer Science and Engineering"
+DEPARTMENT_NAME = "Department of Electronics and Telecommunication Engineering"
 COLLEGE_LOGO_PATH = "college_logo.png"
 
 # Set page config
