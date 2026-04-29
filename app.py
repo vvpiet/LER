@@ -313,7 +313,7 @@ def logout():
 def admin_page():
     render_page_header("Admin Portal: Manage subjects, faculty assignments, attendance, and engagement reports")
     st.title("Admin Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "Create Users", "Manage Students", "Defaulter Students", "Generate Grade Card"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "MCQ Reports", "Create Users", "Manage Students", "Defaulter Students", "Generate Grade Card"])
     
     with tab1:
         st.header("Upload Student List")
@@ -426,29 +426,57 @@ def admin_page():
             st.download_button("Download CSV", csv, "engagement.csv", key="download_eng_csv")
     
     with tab6:
+        st.header("MCQ Reports")
+        st.write("View all MCQ test results submitted by students.")
+        report = get_mcq_test_results()
+        if not report:
+            st.info("No MCQ test results available yet.")
+        else:
+            df_report = pd.DataFrame(report)
+            st.dataframe(df_report, use_container_width=True)
+            csv = df_report.to_csv(index=False)
+            st.download_button("Download MCQ Results CSV", csv, "mcq_test_results.csv", key="download_mcq_results")
+    
+    with tab7:
         st.header("Create Users")
         role = st.selectbox("Role", ["faculty", "student"], key="admin_create_user_role")
-        username = st.text_input("Username", key="admin_create_username")
+        username = st.text_input("Username (login ID)", key="admin_create_username")
         password = st.text_input("Password", type="password", key="admin_create_password")
         name = st.text_input("Name", key="admin_create_name")
         email = st.text_input("Email", key="admin_create_email")
+        roll_no = ""
         prn = ""
         if role == "student":
+            roll_no = st.text_input("Student Roll Number", key="admin_create_user_roll_no")
+            st.info("Student login username will default to roll number if left blank.")
             class_name = st.selectbox("Class", ["SY", "TY", "B.Tech"], key="admin_create_user_class")
             prn = st.text_input("PRN", key="admin_create_user_prn")
         if st.button("Create", key="create_user"):
-            if role == "student":
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("SELECT id FROM classes WHERE name = %s", (class_name,))
-                class_id = cur.fetchone()[0]
-                cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
-                            (username, prn or None, name, class_id))
-                conn.commit()
-                cur.close()
-                conn.close()
-            create_user(username, password, role, name, email)
-            st.success("User created")
+            try:
+                if role == "student":
+                    if not roll_no:
+                        st.error("Student Roll Number is required.")
+                    else:
+                        username_to_use = username.strip() or roll_no.strip()
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute("SELECT id FROM classes WHERE name = %s", (class_name,))
+                        class_id = cur.fetchone()[0]
+                        cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
+                                    (roll_no, prn or None, name, class_id))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        create_user(username_to_use, password, role, name, email)
+                        st.success(f"Student user created with roll number {roll_no}.")
+                else:
+                    if not username:
+                        st.error("Username is required for faculty users.")
+                    else:
+                        create_user(username, password, role, name, email)
+                        st.success("Faculty user created")
+            except Exception as e:
+                st.error(f"Error creating user: {str(e)}")
     
     with tab7:
         st.header("Manage Students")
@@ -668,7 +696,7 @@ def faculty_page():
     render_page_header("Faculty Portal: Mark attendance, submit lecture engagement, and upload resources")
     st.title("Faculty Dashboard")
     user = st.session_state.user
-    tab1, tab2, tab3, tab4 = st.tabs(["Mark Attendance", "Lecture Engagement", "Upload Resources", "View Resources"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Mark Attendance", "Lecture Engagement", "MCQ Tests", "Upload Resources", "View Resources"])
     
     with tab1:
         st.header("Mark Attendance")
@@ -748,6 +776,68 @@ def faculty_page():
         conn.close()
     
     with tab3:
+        st.header("MCQ Test Management")
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT s.id, s.name, c.name as class_name FROM subjects s JOIN faculty_subjects fs ON s.id = fs.subject_id JOIN classes c ON s.class_id = c.id WHERE fs.faculty_id = %s", (user['id'],))
+        subjects = cur.fetchall()
+        cur.close()
+        conn.close()
+        if not subjects:
+            st.warning("No subjects assigned to you")
+        else:
+            subject_dict = {f"{s['name']} ({s['class_name']})": s['id'] for s in subjects}
+            subject_options = list(subject_dict.keys())
+            selected_subject = st.selectbox("Subject", subject_options, key="mcq_subject")
+            subject_id = subject_dict[selected_subject]
+            test_title = st.text_input("Test Title", key="mcq_test_title")
+            proctor_notes = st.text_area("Proctor Notes / Proctoring Instructions", key="mcq_proctor_notes")
+            num_questions = st.number_input("Number of Questions", 1, 20, key="mcq_num_questions")
+
+            questions = []
+            for q_index in range(1, num_questions + 1):
+                st.markdown(f"**Question {q_index}**")
+                question_text = st.text_area(f"Question {q_index}", key=f"mcq_question_{q_index}")
+                option_a = st.text_input(f"Option A", key=f"mcq_option_a_{q_index}")
+                option_b = st.text_input(f"Option B", key=f"mcq_option_b_{q_index}")
+                option_c = st.text_input(f"Option C", key=f"mcq_option_c_{q_index}")
+                option_d = st.text_input(f"Option D", key=f"mcq_option_d_{q_index}")
+                correct_option = st.selectbox("Correct Option", ["A", "B", "C", "D"], key=f"mcq_correct_{q_index}")
+                marks = st.number_input("Marks", 1, 20, 1, key=f"mcq_marks_{q_index}")
+                questions.append({
+                    'question_text': question_text.strip(),
+                    'option_a': option_a.strip(),
+                    'option_b': option_b.strip(),
+                    'option_c': option_c.strip(),
+                    'option_d': option_d.strip(),
+                    'correct_option': correct_option,
+                    'marks': marks
+                })
+
+            if st.button("Save MCQ Test", key="save_mcq_test"):
+                missing = [i + 1 for i, q in enumerate(questions) if not q['question_text'] or not q['option_a'] or not q['option_b'] or not q['option_c'] or not q['option_d']]
+                if not test_title.strip():
+                    st.error("Test title is required.")
+                elif missing:
+                    st.error(f"Please complete all fields for question(s): {', '.join(map(str, missing))}.")
+                else:
+                    test_id = create_mcq_test(user['id'], subject_id, test_title.strip(), proctor_notes.strip())
+                    for q in questions:
+                        add_mcq_question(test_id, q['question_text'], q['option_a'], q['option_b'], q['option_c'], q['option_d'], q['correct_option'], q['marks'])
+                    st.success("MCQ test created successfully.")
+
+        st.divider()
+        st.subheader("Your MCQ Tests")
+        tests = get_faculty_tests(user['id'])
+        if not tests:
+            st.info("No MCQ tests created yet.")
+        else:
+            for test in tests:
+                st.write(f"**{test['title']}** ({test['subject_name']}) - Created: {test['created_at'].strftime('%Y-%m-%d')}")
+                st.write(f"Proctor Notes: {test['proctor_notes'] or 'None'}")
+                st.markdown("---")
+    
+    with tab4:
         st.header("Upload Resources (Assignments & Notes)")
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -773,7 +863,7 @@ def faculty_page():
                 st.success(f"{resource_type} uploaded successfully")
                 st.rerun()
     
-    with tab4:
+    with tab5:
         st.header("Your Resources")
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -821,7 +911,7 @@ def student_page():
     render_page_header("Student Portal: View attendance, download faculty resources, and download grade card")
     st.title("Student Dashboard")
     user = st.session_state.user
-    tab1, tab2, tab3 = st.tabs(["View Attendance", "Download Resources", "Download Grade Card"])
+    tab1, tab2, tab3, tab4 = st.tabs(["View Attendance", "Download Resources", "MCQ Tests", "Download Grade Card"])
     
     with tab1:
         st.header("Your Attendance")
@@ -882,8 +972,63 @@ def student_page():
                     st.write(resource['uploaded_date'])
                 with cols[4]:
                     st.download_button("Download", data=bytes(resource['file_data']), file_name=resource['file_name'], key=f"download_resource_{resource['id']}")
-    
+
     with tab3:
+        st.header("MCQ Tests")
+        tests = get_student_tests(user['username'])
+        if not tests:
+            st.info("No MCQ tests available yet.")
+        else:
+            test_options = [f"{t['title']} ({t['subject_name']})" for t in tests]
+            selected_test = st.selectbox("Select Test", test_options, key="student_mcq_test")
+            if selected_test:
+                selected_index = test_options.index(selected_test)
+                test_info = tests[selected_index]
+                test_data = get_test_with_questions(test_info['id'])
+                st.write(f"**{test_data['test']['title']}**")
+                st.write(f"Subject: {test_data['test']['subject_name']}")
+                st.write(f"Faculty: {test_data['test']['faculty_name']}")
+                st.write(f"Proctor Notes: {test_data['test']['proctor_notes'] or 'None'}")
+                st.write(f"Proctored: {'Yes' if test_data['test']['proctored'] else 'No'}")
+
+                answers = {}
+                for q in test_data['questions']:
+                    st.markdown(f"**Q{q['id']}: {q['question_text']}**")
+                    choice = st.radio(
+                        "Select answer",
+                        [f"A. {q['option_a']}", f"B. {q['option_b']}", f"C. {q['option_c']}", f"D. {q['option_d']}"],
+                        key=f"student_mcq_q_{q['id']}"
+                    )
+                    answers[q['id']] = choice[0]
+
+                if st.button("Submit Test", key="submit_student_mcq"):
+                    total_marks = 0
+                    score = 0
+                    answer_records = []
+                    for q in test_data['questions']:
+                        selected_option = answers.get(q['id'])
+                        correct = (selected_option == q['correct_option'])
+                        total_marks += q['marks']
+                        if correct:
+                            score += q['marks']
+                        answer_records.append({
+                            'question_id': q['id'],
+                            'selected_option': selected_option,
+                            'is_correct': correct
+                        })
+                    percent = round((score / total_marks) * 100, 2) if total_marks else 0
+                    passed = percent >= 50
+                    submit_student_test_attempt(test_info['id'], user['username'], answer_records, score, total_marks, percent, passed, test_data['test']['proctor_notes'])
+                    st.success(f"Test submitted. Score: {score}/{total_marks} ({percent}%). Result: {'PASS' if passed else 'FAIL'}")
+
+            attempts = get_student_test_attempts(user['username'])
+            if attempts:
+                st.divider()
+                st.subheader("Your Test Results")
+                for attempt in attempts:
+                    st.write(f"**{attempt['title']}** - {attempt['subject_name']} | Score: {attempt['score']}/{attempt['total_marks']} | {attempt['percent']}% | {'PASS' if attempt['passed'] else 'FAIL'} | {attempt['finished_at'].strftime('%Y-%m-%d %H:%M')}")
+
+    with tab4:
         st.header("Download Grade Card")
         
         # Get student details
