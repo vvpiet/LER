@@ -567,7 +567,7 @@ def admin_page():
                     except Exception as e:
                         st.error(f"Error sending alerts: {str(e)}")
 
-    with tab9:
+    with tab10:
         st.header("Generate Grade Card")
         students = get_all_students()
         if not students:
