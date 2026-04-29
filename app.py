@@ -478,7 +478,7 @@ def admin_page():
             except Exception as e:
                 st.error(f"Error creating user: {str(e)}")
     
-    with tab7:
+    with tab8:
         st.header("Manage Students")
         students = get_all_students()
         if not students:
@@ -532,7 +532,7 @@ def admin_page():
                         del st.session_state.delete_student_id
                         st.rerun()
     
-    with tab8:
+    with tab9:
         st.header("Defaulter Students (Attendance < 60%)")
         weeks = st.slider("Check last N weeks", 1, 16, 4, key="defaulter_weeks")
         
