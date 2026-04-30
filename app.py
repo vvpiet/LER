@@ -35,6 +35,19 @@ def render_page_header(subtitle: str = "Lecture Engagement & Resource Management
     st.markdown("<hr style='border: 1px solid #ddd; margin: 0 0 16px 0;'>", unsafe_allow_html=True)
 
 
+def render_page_footer():
+    st.markdown("<hr style='border: 1px solid #ddd; margin: 24px 0 8px 0;'>", unsafe_allow_html=True)
+    footer_cols = st.columns([1, 8, 1])
+    footer_cols[1].markdown(
+        """
+        <div style='text-align:center; font-size:14px; color:#444;'>
+            <strong>Prepared by:</strong> Prof. Amir M. Usman Wagdarikar, Head and Exam Coordinator, Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def check_weekly_attendance(student_id, subject_id, weeks=4):
     """Check attendance percentage for last N weeks"""
     conn = get_db_connection()
