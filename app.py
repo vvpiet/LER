@@ -912,12 +912,14 @@ def student_page():
     render_page_header("Student Portal: View attendance, download faculty resources, and download grade card")
     st.title("Student Dashboard")
     user = st.session_state.user
+    student_info = database.get_student_by_user(user)
+    student_roll_no = student_info['roll_no'] if student_info else None
+    student_id = student_info['id'] if student_info else None
     tab1, tab2, tab3, tab4 = st.tabs(["View Attendance", "Download Resources", "MCQ Tests", "Download Grade Card"])
     
     with tab1:
         st.header("Your Attendance")
-        student_id = database.get_student_id_by_roll_no(user['username'])
-        if student_id is None:
+        if student_info is None:
             st.warning("Student record not found.")
         else:
             conn = get_db_connection()
@@ -957,7 +959,7 @@ def student_page():
     with tab2:
         st.header("Available Resources")
         try:
-            resources = database.get_student_resources(user['username'])
+            resources = database.get_student_resources(student_roll_no) if student_roll_no else []
         except Exception as e:
             st.error(f"Error loading resources: {str(e)}")
             resources = []
@@ -980,7 +982,7 @@ def student_page():
 
     with tab3:
         st.header("MCQ Tests")
-        tests = get_student_tests(user['username'])
+        tests = get_student_tests(student_roll_no) if student_roll_no else []
         if not tests:
             st.info("No MCQ tests available yet.")
         else:
@@ -1023,10 +1025,10 @@ def student_page():
                         })
                     percent = round((score / total_marks) * 100, 2) if total_marks else 0
                     passed = percent >= 50
-                    submit_student_test_attempt(test_info['id'], user['username'], answer_records, score, total_marks, percent, passed, test_data['test']['proctor_notes'])
+                    submit_student_test_attempt(test_info['id'], student_roll_no, answer_records, score, total_marks, percent, passed, test_data['test']['proctor_notes'])
                     st.success(f"Test submitted. Score: {score}/{total_marks} ({percent}%). Result: {'PASS' if passed else 'FAIL'}")
 
-            attempts = get_student_test_attempts(user['username'])
+            attempts = get_student_test_attempts(student_roll_no) if student_roll_no else []
             if attempts:
                 st.divider()
                 st.subheader("Your Test Results")
@@ -1036,8 +1038,8 @@ def student_page():
     with tab4:
         st.header("Download Grade Card")
         
-        # Get student details by roll number
-        student_info = database.get_student_by_roll_no(user['username'])
+        # Resolve student details from the logged-in user
+        student_info = student_info
         
         if student_info:
             st.write(f"**Name:** {student_info['name']}")
