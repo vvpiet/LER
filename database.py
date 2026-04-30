@@ -350,6 +350,22 @@ def get_student_id_by_roll_no(roll_no):
     return row[0] if row else None
 
 
+def get_student_by_roll_no(roll_no):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        'SELECT s.id, s.prn, s.name, s.roll_no, c.name as class_name '
+        'FROM students s '
+        'JOIN classes c ON s.class_id = c.id '
+        'WHERE s.roll_no = %s',
+        (roll_no,)
+    )
+    student = cur.fetchone()
+    cur.close()
+    conn.close()
+    return student
+
+
 def create_mcq_test(faculty_id, subject_id, title, proctor_notes, proctored=True):
     conn = get_db_connection()
     cur = conn.cursor()

@@ -18,40 +18,40 @@ st.set_page_config(page_title="Lecture Engagement Register", layout="wide")
 def render_page_header(subtitle: str = "Lecture Engagement & Resource Management System"):
     with st.container():
         cols = st.columns([1, 8, 1])
-        if os.path.exists(COLLEGE_LOGO_PATH):
-            cols[0].image(COLLEGE_LOGO_PATH, width=100)
+        student_id = database.get_student_id_by_roll_no(user['username'])
+        if student_id is None:
+            st.warning("Student record not found.")
         else:
-            cols[0].markdown("<div style='font-size:48px; text-align:center;'>🏫</div>", unsafe_allow_html=True)
-        cols[1].markdown(
-            f"""
-            <div style='text-align:center; padding: 8px 0;'>
-                <h2 style='margin: 0; font-size: 28px; color: #0f3c78;'>{COLLEGE_NAME}</h2>
-                <p style='margin: 4px 0 4px; font-size: 16px; color: #555;'>{subtitle}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        cols[2].write("")
-    st.markdown("<hr style='border: 1px solid #ddd; margin: 0 0 16px 0;'>", unsafe_allow_html=True)
-
-
-def render_page_footer():
-    st.markdown("<hr style='border: 1px solid #ddd; margin: 24px 0 8px 0;'>", unsafe_allow_html=True)
-    footer_cols = st.columns([1, 8, 1])
-    footer_cols[1].markdown(
-        """
-        <div style='text-align:center; font-size:14px; color:#444;'>
-            <strong>Prepared by:</strong> Prof. Amir M. Usman Wagdarikar, Head and Exam Coordinator, Vidya Vikas Pratishthan Institute of Engineering & Technology, Solapur
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def check_weekly_attendance(student_id, subject_id, weeks=4):
-    """Check attendance percentage for last N weeks"""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    
+            conn = get_db_connection()
+            df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = %s ORDER BY a.date DESC", conn, params=(student_id,))
+            conn.close()
+            if df.empty:
+                st.info("No attendance records found")
+            else:
+                # Calculate attendance percentage by subject
+                st.subheader("Attendance Summary")
+                conn = get_db_connection()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute(
+                    "SELECT sub.name as subject, "
+                    "COUNT(*) as total, "
+                    "SUM(CASE WHEN a.present THEN 1 ELSE 0 END) as present, "
+                    "ROUND(100.0 * SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 2) as attendance_pct "
+                    "FROM attendance a "
+                    "JOIN subjects sub ON a.subject_id = sub.id "
+                    "WHERE a.student_id = %s "
+                    "GROUP BY sub.name "
+                    "ORDER BY sub.name",
+                    (student_id,)
+                )
+                summary = cur.fetchall()
+                cur.close()
+                conn.close()
+                for row in summary:
+                    color = "🟢" if row['attendance_pct'] >= 75 else "🟡" if row['attendance_pct'] >= 60 else "🔴"
+                    st.write(f"{color} {row['subject']}: {row['attendance_pct']}% ({row['present']}/{row['total']})")
+                st.subheader("Detailed Attendance")
+                st.dataframe(df, use_container_width=True)
     start_date = datetime.now() - timedelta(weeks=weeks)
     
     cur.execute(
@@ -331,8 +331,8 @@ def admin_page():
                     cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
                                 (row['roll_no'], prn_value, row['name'], class_id))
                     # Create user
-                    cur.execute("INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, 'student', %s, '') ON CONFLICT (username) DO NOTHING",
-                                (row['roll_no'], hash_password('student123'), row['name']))
+                    cur.execute("INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username) DO NOTHING",
+                                (row['roll_no'], hash_password('student123'), 'student', row['name'], ''))
                 conn.commit()
                 cur.close()
                 conn.close()
@@ -915,39 +915,43 @@ def student_page():
     
     with tab1:
         st.header("Your Attendance")
-        conn = get_db_connection()
-        df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s) ORDER BY a.date DESC", conn, params=(user['username'],))
-        conn.close()
-        
-        if df.empty:
-            st.info("No attendance records found")
+        student_id = database.get_student_id_by_roll_no(user['username'])
+        if student_id is None:
+            st.warning("Student record not found.")
         else:
-            # Calculate attendance percentage by subject
-            st.subheader("Attendance Summary")
             conn = get_db_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute(
-                "SELECT sub.name as subject, "
-                "COUNT(*) as total, "
-                "SUM(CASE WHEN a.present THEN 1 ELSE 0 END) as present, "
-                "ROUND(100.0 * SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 2) as attendance_pct "
-                "FROM attendance a "
-                "JOIN subjects sub ON a.subject_id = sub.id "
-                "WHERE a.student_id = (SELECT id FROM students WHERE roll_no = %s) "
-                "GROUP BY sub.name "
-                "ORDER BY sub.name",
-                (user['username'],)
-            )
-            summary = cur.fetchall()
-            cur.close()
+            df = pd.read_sql("SELECT sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN subjects sub ON a.subject_id = sub.id WHERE a.student_id = %s ORDER BY a.date DESC", conn, params=(student_id,))
             conn.close()
-            
-            for row in summary:
-                color = "🟢" if row['attendance_pct'] >= 75 else "🟡" if row['attendance_pct'] >= 60 else "🔴"
-                st.write(f"{color} {row['subject']}: {row['attendance_pct']}% ({row['present']}/{row['total']})")
-            
-            st.subheader("Detailed Attendance")
-            st.dataframe(df, use_container_width=True)
+
+            if df.empty:
+                st.info("No attendance records found")
+            else:
+                # Calculate attendance percentage by subject
+                st.subheader("Attendance Summary")
+                conn = get_db_connection()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute(
+                    "SELECT sub.name as subject, "
+                    "COUNT(*) as total, "
+                    "SUM(CASE WHEN a.present THEN 1 ELSE 0 END) as present, "
+                    "ROUND(100.0 * SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0), 2) as attendance_pct "
+                    "FROM attendance a "
+                    "JOIN subjects sub ON a.subject_id = sub.id "
+                    "WHERE a.student_id = %s "
+                    "GROUP BY sub.name "
+                    "ORDER BY sub.name",
+                    (student_id,)
+                )
+                summary = cur.fetchall()
+                cur.close()
+                conn.close()
+
+                for row in summary:
+                    color = "🟢" if row['attendance_pct'] >= 75 else "🟡" if row['attendance_pct'] >= 60 else "🔴"
+                    st.write(f"{color} {row['subject']}: {row['attendance_pct']}% ({row['present']}/{row['total']})")
+
+                st.subheader("Detailed Attendance")
+                st.dataframe(df, use_container_width=True)
 
     with tab2:
         st.header("Available Resources")
@@ -1031,20 +1035,8 @@ def student_page():
     with tab4:
         st.header("Download Grade Card")
         
-        # Get student details
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            "SELECT s.id, s.prn, s.name, s.roll_no, c.name as class_name, u.role "
-            "FROM students s "
-            "JOIN classes c ON s.class_id = c.id "
-            "JOIN users u ON u.username = %s "
-            "WHERE s.roll_no = %s",
-            (user['username'], user['username'])
-        )
-        student_info = cur.fetchone()
-        cur.close()
-        conn.close()
+        # Get student details by roll number
+        student_info = database.get_student_by_roll_no(user['username'])
         
         if student_info:
             st.write(f"**Name:** {student_info['name']}")
