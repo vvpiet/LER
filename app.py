@@ -447,6 +447,7 @@ def admin_page():
         email = st.text_input("Email", key="admin_create_email")
         roll_no = ""
         prn = ""
+        class_name = "SY"
         if role == "student":
             roll_no = st.text_input("Student Roll Number", key="admin_create_user_roll_no")
             st.info("Student login username will default to roll number if left blank.")
