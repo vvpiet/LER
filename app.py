@@ -460,27 +460,32 @@ def admin_page():
                         st.error("Student Roll Number is required.")
                     else:
                         username_to_use = username.strip() or roll_no.strip()
-                        conn = get_db_connection()
-                        cur = conn.cursor()
                         try:
+                            # First, create the user in users table
+                            create_user(username_to_use, password, role, name, email)
+                            
+                            # Then create/link the student record
+                            conn = get_db_connection()
+                            cur = conn.cursor()
                             cur.execute("SELECT id FROM classes WHERE name = %s", (class_name,))
                             result = cur.fetchone()
                             if not result:
                                 st.error(f"Class '{class_name}' not found in database.")
-                                cur.close()
-                                conn.close()
                             else:
                                 class_id = result[0]
-                                cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
-                                            (roll_no, prn or None, name, class_id))
+                                # Insert student - if roll_no exists, update it instead
+                                cur.execute("""
+                                    INSERT INTO students (roll_no, prn, name, class_id) 
+                                    VALUES (%s, %s, %s, %s) 
+                                    ON CONFLICT (roll_no) DO UPDATE 
+                                    SET prn = EXCLUDED.prn, name = EXCLUDED.name, class_id = EXCLUDED.class_id
+                                """, (roll_no, prn or None, name, class_id))
                                 conn.commit()
-                                create_user(username_to_use, password, role, name, email)
-                                st.success(f"Student user created with username '{username_to_use}' and roll number {roll_no}.")
-                        except Exception as e:
-                            st.error(f"Error creating student: {str(e)}")
-                        finally:
+                                st.success(f"✅ Student '{name}' created successfully!\n- Username: {username_to_use}\n- Roll No: {roll_no}\n- Class: {class_name}")
                             cur.close()
                             conn.close()
+                        except Exception as e:
+                            st.error(f"Error creating student: {str(e)}")
                 else:
                     if not username:
                         st.error("Username is required for faculty users.")
