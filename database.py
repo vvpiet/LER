@@ -523,7 +523,16 @@ def get_mcq_test_results():
 def get_all_students():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute('SELECT s.id, s.roll_no, s.prn, s.name, c.name as class_name, u.username FROM students s JOIN classes c ON s.class_id = c.id LEFT JOIN users u ON u.username = s.roll_no ORDER BY c.name, s.roll_no')
+    # Get all students with their potential usernames (by roll_no or name match)
+    cur.execute('''
+        SELECT DISTINCT s.id, s.roll_no, s.prn, s.name, c.name as class_name, 
+               u.username
+        FROM students s 
+        JOIN classes c ON s.class_id = c.id 
+        LEFT JOIN users u ON (u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))) 
+                          AND u.role = 'student'
+        ORDER BY c.name, s.roll_no
+    ''')
     students = cur.fetchall()
     cur.close()
     conn.close()
