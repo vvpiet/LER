@@ -492,11 +492,13 @@ def admin_page():
     
     with tab8:
         st.header("Manage Students")
+        if st.button("🔄 Refresh Student List", key="refresh_students"):
+            st.rerun()
         students = get_all_students()
         if not students:
             st.warning("No students found")
         else:
-            st.subheader("Student List")
+            st.subheader(f"Student List ({len(students)} total)")
             for student in students:
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 1, 1])
                 with col1:

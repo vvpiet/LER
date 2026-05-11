@@ -521,17 +521,21 @@ def get_mcq_test_results():
 
 # Student management functions
 def get_all_students():
+    """Get all students with their usernames if they exist."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    # Get all students with their potential usernames (by roll_no or name match)
+    # Query students from all classes, ensuring proper joins
+    # First verify classes exist
+    cur.execute("SELECT id, name FROM classes ORDER BY name")
+    classes = cur.fetchall()
+    
+    # Then fetch all students with proper class info
     cur.execute('''
-        SELECT DISTINCT s.id, s.roll_no, s.prn, s.name, c.name as class_name, 
-               u.username
+        SELECT s.id, s.roll_no, s.prn, s.name, c.id as class_id, c.name as class_name, u.username
         FROM students s 
-        JOIN classes c ON s.class_id = c.id 
-        LEFT JOIN users u ON (u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))) 
-                          AND u.role = 'student'
-        ORDER BY c.name, s.roll_no
+        INNER JOIN classes c ON s.class_id = c.id 
+        LEFT JOIN users u ON u.username = s.roll_no AND u.role = 'student'
+        ORDER BY c.name ASC, s.roll_no ASC
     ''')
     students = cur.fetchall()
     cur.close()
