@@ -489,7 +489,7 @@ def admin_page():
             for student in students:
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 1, 1])
                 with col1:
-                    st.write(student['roll_no'])
+                    st.write(student.get('username', student['roll_no']))
                 with col2:
                     st.write(student['name'])
                 with col3:
@@ -574,7 +574,7 @@ def admin_page():
         if not students:
             st.warning("No students available")
         else:
-            student_options = [f"{s['roll_no']} - {s['name']} ({s['class_name']})" for s in students]
+            student_options = [f"{s.get('username', s['roll_no'])} - {s['name']} ({s['class_name']})" for s in students]
             student_dict = {option: s for option, s in zip(student_options, students)}
             selected_student = st.selectbox("Select Student", student_options, key="admin_gradecard_student")
             student = student_dict[selected_student]
@@ -718,7 +718,7 @@ def faculty_page():
             time = st.time_input("Time", key="att_time")
             
             # Get students for the class
-            cur.execute("SELECT st.id, st.roll_no, st.name FROM students st JOIN subjects sub ON st.class_id = sub.class_id WHERE sub.id = %s", (subject_id,))
+            cur.execute("SELECT st.id, st.roll_no, st.name FROM students st JOIN subjects sub ON st.class_id = sub.class_id WHERE sub.id = %s ORDER BY st.roll_no", (subject_id,))
             students = cur.fetchall()
             cur.close()
             conn.close()

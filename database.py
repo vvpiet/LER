@@ -523,7 +523,7 @@ def get_mcq_test_results():
 def get_all_students():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute('SELECT s.id, s.roll_no, s.prn, s.name, c.name as class_name FROM students s JOIN classes c ON s.class_id = c.id ORDER BY s.roll_no')
+    cur.execute('SELECT s.id, s.roll_no, s.prn, s.name, c.name as class_name, u.username FROM students s JOIN classes c ON s.class_id = c.id LEFT JOIN users u ON u.username = s.roll_no OR u.name = s.name ORDER BY c.name, s.roll_no')
     students = cur.fetchall()
     cur.close()
     conn.close()
