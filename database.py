@@ -521,20 +521,20 @@ def get_mcq_test_results():
 
 # Student management functions
 def get_all_students():
-    """Get all students with their usernames if they exist."""
+    """Get all students with their usernames if they exist.
+    Matches students to users by roll_no first, then by name as fallback.
+    """
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    # Query students from all classes, ensuring proper joins
-    # First verify classes exist
-    cur.execute("SELECT id, name FROM classes ORDER BY name")
-    classes = cur.fetchall()
-    
-    # Then fetch all students with proper class info
+    # Query students and left join to users
+    # Try to match by roll_no first, then by name (for students created via Create Users tab)
     cur.execute('''
-        SELECT s.id, s.roll_no, s.prn, s.name, c.id as class_id, c.name as class_name, u.username
+        SELECT s.id, s.roll_no, s.prn, s.name, c.id as class_id, c.name as class_name, 
+               COALESCE(u_rollno.username, u_name.username) as username
         FROM students s 
         INNER JOIN classes c ON s.class_id = c.id 
-        LEFT JOIN users u ON u.username = s.roll_no AND u.role = 'student'
+        LEFT JOIN users u_rollno ON u_rollno.username = s.roll_no AND u_rollno.role = 'student'
+        LEFT JOIN users u_name ON LOWER(TRIM(u_name.name)) = LOWER(TRIM(s.name)) AND u_name.role = 'student' AND u_rollno.id IS NULL
         ORDER BY c.name ASC, s.roll_no ASC
     ''')
     students = cur.fetchall()
