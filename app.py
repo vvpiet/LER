@@ -294,23 +294,27 @@ else:
 def login():
     render_page_header()
     st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login", key="login_button"):
+    with st.form("login_form"):
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+        submitted = st.form_submit_button("Login")
+
+    if submitted:
         user = authenticate_user(username, password)
         if user:
             st.session_state.user = user
             st.success("Logged in successfully")
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Invalid credentials")
+
     render_page_footer()
 
 # Logout
 def logout():
     if 'user' in st.session_state:
         del st.session_state.user
-    st.rerun()
+    st.experimental_rerun()
 
 # Admin page
 def admin_page():

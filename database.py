@@ -324,7 +324,7 @@ def authenticate_user(username, password):
     cur.close()
     conn.close()
     if user and check_password(password, user['password_hash']):
-        return user
+        return dict(user)
     return None
 
 # Other functions will be added as needed
