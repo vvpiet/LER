@@ -267,6 +267,35 @@ def create_student_user(username, password, name, email, roll_no, prn, class_nam
         conn.close()
 
 
+def sync_student_user_accounts(default_password='student123'):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        '''
+        SELECT u.id, u.password_hash
+        FROM users u
+        WHERE u.role = 'student'
+          AND EXISTS (
+              SELECT 1 FROM students s
+              WHERE u.username = s.roll_no
+                 OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
+          )
+        '''
+    )
+    rows = cur.fetchall()
+    updated = 0
+    for user_id, stored_hash in rows:
+        if not check_password(default_password, stored_hash):
+            new_hash = hash_password(default_password)
+            cur.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
+            updated += 1
+    if updated:
+        conn.commit()
+    cur.close()
+    conn.close()
+    return updated
+
+
 def authenticate_user(username, password):
     username = username.strip() if username else username
     password = password or ''
@@ -277,7 +306,8 @@ def authenticate_user(username, password):
     user = cur.fetchone()
 
     if not user:
-        # Fallback: student may try logging in with roll number while username differs.
+        # Fallback: student may try logging in with roll number or name while the stored
+        # user record may have a different username.
         cur.execute(
             '''
             SELECT u.*

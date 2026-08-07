@@ -284,24 +284,11 @@ if 'db_init' not in st.session_state:
     conn.commit()
     cur.close()
     conn.close()
+    database.sync_student_user_accounts()
     st.session_state.db_init = True
 else:
     ensure_schema()
-
-# Login function
-def login():
-    render_page_header()
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login", key="login_button"):
-        user = authenticate_user(username, password)
-        if user:
-            st.session_state.user = user
-            st.success("Logged in successfully")
-            st.rerun()
-        else:
-            st.error("Invalid credentials")
+    database.sync_student_user_accounts()
     render_page_footer()
 
 # Logout
