@@ -269,26 +269,36 @@ def create_student_user(username, password, name, email, roll_no, prn, class_nam
 
 def sync_student_user_accounts(default_password='student123'):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        '''
-        SELECT u.id, u.password_hash
-        FROM users u
-        WHERE u.role = 'student'
-          AND EXISTS (
-              SELECT 1 FROM students s
-              WHERE u.username = s.roll_no
-                 OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
-          )
-        '''
-    )
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("SELECT id FROM classes WHERE name = %s", ('SY',))
+    class_row = cur.fetchone()
+    default_class_id = class_row['id'] if class_row else None
+
+    cur.execute("SELECT id, username, name, password_hash FROM users WHERE role = 'student'")
     rows = cur.fetchall()
     updated = 0
-    for user_id, stored_hash in rows:
+    for user in rows:
+        user_id = user['id']
+        username = user['username']
+        name = user.get('name') or username
+
+        # If no matching student record exists, create a minimal one so student login and student profile resolution work.
+        if username:
+            cur.execute('SELECT id FROM students WHERE roll_no = %s', (username,))
+            student_exists = cur.fetchone() is not None
+            if not student_exists and default_class_id is not None:
+                cur.execute(
+                    'INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING',
+                    (username, None, name, default_class_id)
+                )
+
+        stored_hash = user['password_hash']
         if not check_password(default_password, stored_hash):
             new_hash = hash_password(default_password)
             cur.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
             updated += 1
+
     if updated:
         conn.commit()
     cur.close()
