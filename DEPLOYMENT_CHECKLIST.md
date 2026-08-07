@@ -215,6 +215,16 @@
 
 ---
 
+## Deployment
+- [ ] `Procfile` exists for Render/Railway deployment
+- [ ] `render.yaml` exists for Render service configuration
+- [ ] `requirements.txt` lists all Python dependencies
+- [ ] `DATABASE_URL` set in Render or Railway environment variables
+- [ ] App runs with `streamlit run app.py --server.port $PORT --server.enableCORS false --server.address 0.0.0.0`
+- [ ] Local `.env` file not committed to GitHub
+
+---
+
 ## Browser/Device Compatibility
 
 - [ ] Chrome desktop works
