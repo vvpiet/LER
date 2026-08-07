@@ -232,7 +232,15 @@ def create_student_user(username, password, name, email, roll_no, prn, class_nam
 
         hashed = hash_password(password or 'student123')
         cur.execute(
-            'INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s)',
+            '''
+            INSERT INTO users (username, password_hash, role, name, email)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (username) DO UPDATE
+            SET password_hash = EXCLUDED.password_hash,
+                role = EXCLUDED.role,
+                name = EXCLUDED.name,
+                email = EXCLUDED.email
+            ''',
             (username, hashed, 'student', name, email)
         )
 
@@ -260,10 +268,29 @@ def create_student_user(username, password, name, email, roll_no, prn, class_nam
 
 
 def authenticate_user(username, password):
+    username = username.strip() if username else username
+    password = password or ''
+
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute('SELECT * FROM users WHERE username = %s', (username,))
     user = cur.fetchone()
+
+    if not user:
+        # Fallback: student may try logging in with roll number while username differs.
+        cur.execute(
+            '''
+            SELECT u.*
+            FROM users u
+            JOIN students s ON u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
+            WHERE u.role = 'student'
+              AND (s.roll_no = %s OR LOWER(TRIM(s.name)) = LOWER(TRIM(%s)))
+            LIMIT 1
+            ''',
+            (username, username)
+        )
+        user = cur.fetchone()
+
     cur.close()
     conn.close()
     if user and check_password(password, user['password_hash']):
