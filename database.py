@@ -330,6 +330,21 @@ def sync_student_user_accounts(default_password='student123'):
     return created + updated
 
 
+def _find_student_user_by_input(cur, username):
+    cur.execute(
+        '''
+        SELECT u.*
+        FROM users u
+        JOIN students s ON u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
+        WHERE u.role = 'student'
+          AND (s.roll_no = %s OR LOWER(TRIM(s.name)) = LOWER(TRIM(%s)))
+        LIMIT 1
+        ''',
+        (username, username)
+    )
+    return cur.fetchone()
+
+
 def authenticate_user(username, password):
     username = username.strip() if username else username
     password = password or ''
@@ -339,25 +354,21 @@ def authenticate_user(username, password):
     cur.execute('SELECT * FROM users WHERE username = %s', (username,))
     user = cur.fetchone()
 
-    if not user:
-        # Fallback: student may try logging in with roll number or name while the stored
-        # user record may have a different username.
-        cur.execute(
-            '''
-            SELECT u.*
-            FROM users u
-            JOIN students s ON u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
-            WHERE u.role = 'student'
-              AND (s.roll_no = %s OR LOWER(TRIM(s.name)) = LOWER(TRIM(%s)))
-            LIMIT 1
-            ''',
-            (username, username)
-        )
+    if not user and username:
+        user = _find_student_user_by_input(cur, username)
+
+    if not user and username:
+        # If student records existed without user accounts, create them and retry.
+        sync_student_user_accounts()
+        cur.execute('SELECT * FROM users WHERE username = %s', (username,))
         user = cur.fetchone()
+        if not user:
+            user = _find_student_user_by_input(cur, username)
 
     cur.close()
     conn.close()
-    if user and check_password(password, user['password_hash']):
+
+    if user and user.get('password_hash') and check_password(password, user['password_hash']):
         return dict(user)
     return None
 

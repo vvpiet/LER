@@ -507,7 +507,7 @@ def admin_page():
                         st.session_state.delete_student_id = student['id']
             
             if 'edit_student_id' in st.session_state:
-                st.divider()
+                st.markdown("---")
                 st.subheader("Edit Student")
                 student = next((s for s in students if s['id'] == st.session_state.edit_student_id), None)
                 if student:
@@ -522,7 +522,7 @@ def admin_page():
                         st.rerun()
             
             if 'delete_student_id' in st.session_state:
-                st.divider()
+                st.markdown("---")
                 st.warning("Are you sure you want to delete this student? All related attendance records will be deleted.")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -830,7 +830,7 @@ def faculty_page():
                         add_mcq_question(test_id, q['question_text'], q['option_a'], q['option_b'], q['option_c'], q['option_d'], q['correct_option'], q['marks'])
                     st.success("MCQ test created successfully.")
 
-        st.divider()
+        st.markdown("---")
         st.subheader("Your MCQ Tests")
         tests = get_faculty_tests(user['id'])
         if not tests:
@@ -1033,7 +1033,7 @@ def student_page():
 
             attempts = get_student_test_attempts(student_roll_no) if student_roll_no else []
             if attempts:
-                st.divider()
+                st.markdown("---")
                 st.subheader("Your Test Results")
                 for attempt in attempts:
                     st.write(f"**{attempt['title']}** - {attempt['subject_name']} | Score: {attempt['score']}/{attempt['total_marks']} | {attempt['percent']}% | {'PASS' if attempt['passed'] else 'FAIL'} | {attempt['finished_at'].strftime('%Y-%m-%d %H:%M')}")
