@@ -280,6 +280,25 @@ def sync_student_user_accounts(default_password='student123'):
     class_row = cur.fetchone()
     default_class_id = class_row['id'] if class_row else None
 
+    # Create missing student user accounts for any student records that do not yet have a login.
+    cur.execute('''
+        SELECT s.roll_no, s.name
+        FROM students s
+        LEFT JOIN users u ON u.username = s.roll_no AND u.role = 'student'
+        WHERE u.id IS NULL
+    ''')
+    missing_students = cur.fetchall()
+    created = 0
+    for student in missing_students:
+        username = student['roll_no']
+        name = student['name'] or username
+        hashed = hash_password(default_password)
+        cur.execute(
+            'INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username) DO NOTHING',
+            (username, hashed, 'student', name, None)
+        )
+        created += 1
+
     cur.execute("SELECT id, username, name, password_hash FROM users WHERE role = 'student'")
     rows = cur.fetchall()
     updated = 0
@@ -304,11 +323,11 @@ def sync_student_user_accounts(default_password='student123'):
             cur.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
             updated += 1
 
-    if updated:
+    if created or updated:
         conn.commit()
     cur.close()
     conn.close()
-    return updated
+    return created + updated
 
 
 def authenticate_user(username, password):
