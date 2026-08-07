@@ -217,6 +217,48 @@ def create_user(username, password, role, name, email):
     cur.close()
     conn.close()
 
+def create_student_user(username, password, name, email, roll_no, prn, class_name):
+    if not roll_no:
+        raise ValueError('Student roll number is required.')
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT id FROM classes WHERE name = %s', (class_name,))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"Class '{class_name}' not found in database.")
+        class_id = row[0]
+
+        hashed = hash_password(password or 'student123')
+        cur.execute(
+            'INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s)',
+            (username, hashed, 'student', name, email)
+        )
+
+        cur.execute(
+            '''
+            INSERT INTO students (roll_no, prn, name, class_id)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (roll_no) DO UPDATE
+            SET prn = EXCLUDED.prn,
+                name = EXCLUDED.name,
+                class_id = EXCLUDED.class_id
+            RETURNING id
+            ''',
+            (roll_no, prn or None, name, class_id)
+        )
+        student_id = cur.fetchone()[0]
+        conn.commit()
+        return student_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+
 def authenticate_user(username, password):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
