@@ -6,12 +6,17 @@ from psycopg2 import Binary
 import bcrypt
 from dotenv import load_dotenv
 
-load_dotenv()
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 # Database connection
 def get_db_connection():
-    conn = psycopg2.connect(os.getenv('DATABASE_URL'))
-    return conn
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        raise RuntimeError(
+            'DATABASE_URL is not set. Ensure .env exists or set the DATABASE_URL environment variable in your deployment environment.'
+        )
+    return psycopg2.connect(database_url)
 
 # Create tables
 def create_tables():
