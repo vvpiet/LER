@@ -304,7 +304,7 @@ def login():
         if user:
             st.session_state.user = user
             st.success("Logged in successfully")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Invalid credentials")
 
@@ -314,7 +314,7 @@ def login():
 def logout():
     if 'user' in st.session_state:
         del st.session_state.user
-    st.experimental_rerun()
+    st.rerun()
 
 # Admin page
 def admin_page():
