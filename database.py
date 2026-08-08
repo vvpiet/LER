@@ -225,6 +225,8 @@ def create_user(username, password, role, name, email):
 def create_student_user(username, password, name, email, roll_no, prn, class_name):
     if not roll_no:
         raise ValueError('Student roll number is required.')
+    if not password:
+        raise ValueError('Student password is required.')
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -235,7 +237,7 @@ def create_student_user(username, password, name, email, roll_no, prn, class_nam
             raise ValueError(f"Class '{class_name}' not found in database.")
         class_id = row[0]
 
-        hashed = hash_password(password or 'student123')
+        hashed = hash_password(password)
         cur.execute(
             '''
             INSERT INTO users (username, password_hash, role, name, email)
@@ -299,17 +301,15 @@ def sync_student_user_accounts(default_password='student123'):
         )
         created += 1
 
-    cur.execute("SELECT id, username, name, password_hash FROM users WHERE role = 'student'")
-    rows = cur.fetchall()
-    updated = 0
-    for user in rows:
+    # Ensure existing student users have a matching student record; preserve existing passwords.
+    cur.execute("SELECT id, username, name FROM users WHERE role = 'student'")
+    for user in cur.fetchall():
         user_id = user['id']
         username = user['username']
         name = user.get('name') or username
 
-        # If no matching student record exists, create a minimal one so student login and student profile resolution work.
         if username:
-            cur.execute('SELECT id FROM students WHERE roll_no = %s', (username,))
+            cur.execute('SELECT id FROM students WHERE LOWER(TRIM(roll_no)) = LOWER(TRIM(%s))', (username,))
             student_exists = cur.fetchone() is not None
             if not student_exists and default_class_id is not None:
                 cur.execute(
@@ -317,17 +317,11 @@ def sync_student_user_accounts(default_password='student123'):
                     (username, None, name, default_class_id)
                 )
 
-        stored_hash = user['password_hash']
-        if not check_password(default_password, stored_hash):
-            new_hash = hash_password(default_password)
-            cur.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
-            updated += 1
-
-    if created or updated:
+    if created:
         conn.commit()
     cur.close()
     conn.close()
-    return created + updated
+    return created
 
 
 def _find_student_user_by_input(cur, username):
@@ -362,21 +356,56 @@ def authenticate_user(username, password):
         user = _find_student_user_by_input(cur, username)
 
     if not user and username:
-        # If student records existed without user accounts, create them and retry.
+        # If student records existed without user accounts, create them and retry once.
         sync_student_user_accounts()
-        cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+        cur.execute('SELECT * FROM users WHERE TRIM(username) = %s', (username,))
         user = cur.fetchone()
         if not user:
             user = _find_student_user_by_input(cur, username)
 
+    password_matches = False
+    if user and user.get('password_hash'):
+        password_matches = check_password(password, user['password_hash'])
+
     cur.close()
     conn.close()
 
-    if user and user.get('password_hash') and check_password(password, user['password_hash']):
+    if user and password_matches:
         return dict(user)
     return None
 
-# Other functions will be added as needed
+
+def trace_login_attempt(username, password):
+    username = username.strip() if username else username
+    password = password or ''
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute('SELECT id, username, name, role, password_hash FROM users WHERE TRIM(username) = %s', (username,))
+    user = cur.fetchone()
+    fallback_used = False
+    if not user and username:
+        user = _find_student_user_by_input(cur, username)
+        fallback_used = bool(user)
+
+    password_matches = False
+    if user and user.get('password_hash'):
+        password_matches = check_password(password, user['password_hash'])
+
+    result = {
+        'input_username': username,
+        'found_user': bool(user),
+        'matched_username': user['username'] if user else None,
+        'matched_name': user['name'] if user else None,
+        'role': user['role'] if user else None,
+        'fallback_used': fallback_used,
+        'password_matches': password_matches,
+        'password_hash': user['password_hash'] if user else None,
+    }
+
+    cur.close()
+    conn.close()
+    return result
 
 # Faculty resource functions
 def upload_resource(faculty_id, subject_id, file_name, file_data, resource_type):

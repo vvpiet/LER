@@ -286,9 +286,6 @@ if 'db_init' not in st.session_state:
     conn.close()
     database.sync_student_user_accounts()
     st.session_state.db_init = True
-else:
-    ensure_schema()
-    database.sync_student_user_accounts()
 
 # Login function
 def login():
@@ -464,7 +461,9 @@ def admin_page():
             prn = st.text_input("PRN", key="admin_create_user_prn")
         if st.button("Create", key="create_user"):
             try:
-                if role == "student":
+                if not password:
+                    st.error("Password is required.")
+                elif role == "student":
                     if not roll_no:
                         st.error("Student Roll Number is required.")
                     else:

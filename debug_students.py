@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import os
+import sys
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from database import get_student_user_mismatches
+from database import get_student_user_mismatches, trace_login_attempt
 
-load_dotenv()
+load_dotenv('.env')
 
 conn = psycopg2.connect(os.getenv('DATABASE_URL'))
 cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -67,6 +68,30 @@ if mismatches['orphan_student_users']:
         print(f"  User ID: {u['user_id']}, Username: {u['username']}, Name: {u['user_name']}")
 else:
     print("No orphan student user accounts found.")
+
+def parse_login_trace_args(argv):
+    if len(argv) < 3:
+        return [('am', 'am123')]
+    result = []
+    for arg in argv[2:]:
+        if ':' in arg:
+            username, password = arg.split(':', 1)
+            result.append((username.strip(), password.strip()))
+        else:
+            result.append((arg.strip(), ''))
+    return result
+
+# Check a subject-specific login trace if requested
+if len(sys.argv) > 1 and sys.argv[1] == 'trace':
+    print("\n" + "=" * 80)
+    print("DEBUGGING: Login trace for failing users")
+    print("=" * 80)
+    failing_users = parse_login_trace_args(sys.argv)
+    for username, password in failing_users:
+        trace = trace_login_attempt(username, password)
+        print(f"\nLogin trace for username='{username}':")
+        for key, value in trace.items():
+            print(f"  {key}: {value}")
 
 # Check specific student
 print("\n" + "=" * 80)
