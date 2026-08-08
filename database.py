@@ -284,7 +284,7 @@ def sync_student_user_accounts(default_password='student123'):
     cur.execute('''
         SELECT s.roll_no, s.name
         FROM students s
-        LEFT JOIN users u ON u.username = s.roll_no AND u.role = 'student'
+        LEFT JOIN users u ON LOWER(TRIM(u.username)) = LOWER(TRIM(s.roll_no)) AND u.role = 'student'
         WHERE u.id IS NULL
     ''')
     missing_students = cur.fetchall()
@@ -335,9 +335,11 @@ def _find_student_user_by_input(cur, username):
         '''
         SELECT u.*
         FROM users u
-        JOIN students s ON u.username = s.roll_no OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
+        JOIN students s ON LOWER(TRIM(u.username)) = LOWER(TRIM(s.roll_no))
+                     OR LOWER(TRIM(u.name)) = LOWER(TRIM(s.name))
         WHERE u.role = 'student'
-          AND (s.roll_no = %s OR LOWER(TRIM(s.name)) = LOWER(TRIM(%s)))
+          AND (LOWER(TRIM(s.roll_no)) = LOWER(TRIM(%s))
+               OR LOWER(TRIM(s.name)) = LOWER(TRIM(%s)))
         LIMIT 1
         ''',
         (username, username)
@@ -347,11 +349,13 @@ def _find_student_user_by_input(cur, username):
 
 def authenticate_user(username, password):
     username = username.strip() if username else username
+    if not username:
+        return None
     password = password or ''
 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+    cur.execute('SELECT * FROM users WHERE TRIM(username) = %s', (username,))
     user = cur.fetchone()
 
     if not user and username:

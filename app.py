@@ -300,13 +300,16 @@ def login():
         submitted = st.form_submit_button("Login")
 
     if submitted:
-        user = authenticate_user(username, password)
-        if user:
-            st.session_state.user = user
-            st.success("Logged in successfully")
-            st.rerun()
+        if not username or not password:
+            st.error("Please enter both username and password")
         else:
-            st.error("Invalid credentials")
+            user = authenticate_user(username, password)
+            if user:
+                st.session_state.user = user
+                st.success("Logged in successfully")
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
 
     render_page_footer()
 
