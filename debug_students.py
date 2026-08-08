@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from database import get_student_user_mismatches
 
 load_dotenv()
 
@@ -48,6 +49,24 @@ result = cur.fetchall()
 print(f"\nSY students from get_all_students() query: {len(result)}")
 for r in result:
     print(f"  Roll: {r['roll_no']}, Name: {r['name']}, Username: {r['username']}, Class: {r['class_name']}")
+
+print("\n" + "=" * 80)
+print("DEBUGGING: Check STUDENT/USER MISMATCHES")
+print("=" * 80)
+mismatches = get_student_user_mismatches()
+if mismatches['missing_users']:
+    print(f"Missing student user accounts for {len(mismatches['missing_users'])} student records:")
+    for s in mismatches['missing_users']:
+        print(f"  Student ID: {s['student_id']}, Roll: {s['roll_no']}, Name: {s['student_name']}, Class: {s['class_name']}")
+else:
+    print("No missing student user accounts found.")
+
+if mismatches['orphan_student_users']:
+    print(f"Orphan student user accounts without matching student record: {len(mismatches['orphan_student_users'])}")
+    for u in mismatches['orphan_student_users']:
+        print(f"  User ID: {u['user_id']}, Username: {u['username']}, Name: {u['user_name']}")
+else:
+    print("No orphan student user accounts found.")
 
 # Check specific student
 print("\n" + "=" * 80)

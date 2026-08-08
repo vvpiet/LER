@@ -545,6 +545,42 @@ def get_student_by_user(user):
     return student
 
 
+def get_student_user_mismatches():
+    """Find student records with missing login users and student users without matching student records."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute(
+        '''
+        SELECT s.id AS student_id, s.roll_no, s.name AS student_name, c.name AS class_name
+        FROM students s
+        JOIN classes c ON s.class_id = c.id
+        LEFT JOIN users u ON LOWER(TRIM(u.username)) = LOWER(TRIM(s.roll_no)) AND u.role = 'student'
+        WHERE u.id IS NULL
+        ORDER BY s.roll_no
+        '''
+    )
+    missing_users = cur.fetchall()
+
+    cur.execute(
+        '''
+        SELECT u.id AS user_id, u.username, u.name AS user_name
+        FROM users u
+        LEFT JOIN students s ON LOWER(TRIM(u.username)) = LOWER(TRIM(s.roll_no))
+        WHERE u.role = 'student' AND s.id IS NULL
+        ORDER BY u.username
+        '''
+    )
+    orphan_student_users = cur.fetchall()
+
+    cur.close()
+    conn.close()
+    return {
+        'missing_users': missing_users,
+        'orphan_student_users': orphan_student_users,
+    }
+
+
 def create_mcq_test(faculty_id, subject_id, title, proctor_notes, proctored=True):
     conn = get_db_connection()
     cur = conn.cursor()
