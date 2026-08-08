@@ -337,9 +337,11 @@ def admin_page():
                     prn_value = row['prn'] if 'prn' in row and not pd.isna(row['prn']) else None
                     cur.execute("INSERT INTO students (roll_no, prn, name, class_id) VALUES (%s, %s, %s, %s) ON CONFLICT (roll_no) DO NOTHING",
                                 (row['roll_no'], prn_value, row['name'], class_id))
-                    # Create user
-                    cur.execute("INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, name = EXCLUDED.name, email = EXCLUDED.email",
-                                (row['roll_no'], hash_password('student123'), 'student', row['name'], ''))
+                    # Create user if missing; DO NOT overwrite existing password_hash set by admin
+                    cur.execute(
+                        "INSERT INTO users (username, password_hash, role, name, email) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, name = EXCLUDED.name, email = EXCLUDED.email",
+                        (row['roll_no'], hash_password('student123'), 'student', row['name'], '')
+                    )
                 conn.commit()
                 cur.close()
                 conn.close()
