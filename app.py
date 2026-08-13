@@ -272,24 +272,26 @@ def generate_gradecard_docx(student_data, grades_data):
 def generate_classwise_monthly_attendance(month: int, year: int):
     """
     Generate classwise monthly attendance report with the following columns:
-    Roll No., Name of Student, Subject 1, Subject 2, ..., Total Lectures (Non-Lab), Percentage Attendance
-    
-    Excludes subjects with 'Lab' in their name.
+    Roll No., Name of Student, Subject 1, Subject 1 (Faculty / Classes), Subject 2, Subject 2 (Faculty / Classes), ...,
+    Total Lectures (Non-Lab), Percentage Attendance
+
+    Excludes subjects with 'Lab' in their name and appends the number of classes conducted by
+    the faculty assigned to each subject during the selected month.
     """
     conn = get_db_connection()
-    
+
     # Get all classes
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT id, name FROM classes ORDER BY name")
     classes = cur.fetchall()
     cur.close()
-    
+
     results_by_class = {}
-    
+
     for class_record in classes:
         class_id = class_record['id']
         class_name = class_record['name']
-        
+
         # Get all non-Lab subjects for this class
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
@@ -298,13 +300,13 @@ def generate_classwise_monthly_attendance(month: int, year: int):
         )
         subjects = cur.fetchall()
         cur.close()
-        
+
         subject_ids = [s['id'] for s in subjects]
         subject_names = [s['name'] for s in subjects]
-        
+
         if not subjects:
             continue
-        
+
         # Get all students in this class
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
@@ -313,20 +315,20 @@ def generate_classwise_monthly_attendance(month: int, year: int):
         )
         students = cur.fetchall()
         cur.close()
-        
+
         class_data = []
-        
+
         for student in students:
             student_id = student['id']
             row_data = {
                 'Roll No.': student['roll_no'],
                 'Name of Student': student['name']
             }
-            
+
             total_attendance = 0
             total_lectures = 0
-            
-            # For each subject, get attendance data for the month
+
+            # For each subject, get attendance data for the month and the class count conducted by the faculty
             for subject_id, subject_name in zip(subject_ids, subject_names):
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute(
@@ -343,29 +345,56 @@ def generate_classwise_monthly_attendance(month: int, year: int):
                 )
                 result = cur.fetchone()
                 cur.close()
-                
+
                 lectures_count = result['total_lectures'] or 0
                 row_data[subject_name] = lectures_count
                 total_lectures += lectures_count
                 if result['present_lectures']:
                     total_attendance += result['present_lectures']
-            
+
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute(
+                    """
+                    SELECT u.name as faculty_name,
+                           COUNT(*) as classes_conducted
+                    FROM lecture_engagement le
+                    JOIN users u ON u.id = le.faculty_id
+                    WHERE le.subject_id = %s
+                      AND EXTRACT(MONTH FROM le.date) = %s
+                      AND EXTRACT(YEAR FROM le.date) = %s
+                    GROUP BY u.name
+                    ORDER BY u.name
+                    """,
+                    (subject_id, month, year)
+                )
+                faculty_rows = cur.fetchall()
+                cur.close()
+
+                if faculty_rows:
+                    faculty_summary = '; '.join(
+                        f"{row['faculty_name']} ({row['classes_conducted']})"
+                        for row in faculty_rows
+                    )
+                else:
+                    faculty_summary = 'No classes recorded'
+                row_data[f"{subject_name} (Faculty / Classes)"] = faculty_summary
+
             row_data['Total Lectures (Non-Lab)'] = total_lectures
-            
+
             # Calculate percentage attendance
             if total_lectures > 0:
                 attendance_pct = (total_attendance / total_lectures) * 100
                 row_data['Percentage Attendance'] = round(attendance_pct, 2)
             else:
                 row_data['Percentage Attendance'] = 0.0
-            
+
             class_data.append(row_data)
-        
+
         if class_data:
             results_by_class[class_name] = pd.DataFrame(class_data)
-    
+
     conn.close()
-    
+
     return results_by_class
 
 
@@ -498,7 +527,7 @@ def admin_page():
     
     with tab4:
         st.header("Download Monthly Attendance")
-        st.info("Classwise Monthly Attendance Report (Non-Lab Subjects Only)")
+        st.info("Classwise Monthly Attendance Report (Non-Lab Subjects Only). Each subject also shows the faculty and number of classes conducted in that month.")
         
         col1, col2 = st.columns(2)
         with col1:
