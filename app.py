@@ -272,11 +272,9 @@ def generate_gradecard_docx(student_data, grades_data):
 def generate_classwise_monthly_attendance(month: int, year: int):
     """
     Generate classwise monthly attendance report with the following columns:
-    Roll No., Name of Student, Subject 1, Subject 1 (Faculty / Classes), Subject 2, Subject 2 (Faculty / Classes), ...,
-    Total Lectures (Non-Lab), Percentage Attendance
+    Roll No., Name of Student, Subject 1, Subject 2, ..., Total Lectures (Non-Lab), Percentage Attendance
 
-    Excludes subjects with 'Lab' in their name and appends the number of classes conducted by
-    the faculty assigned to each subject during the selected month.
+    Each subject column contains only the count of lectures for that subject in the selected month.
     """
     conn = get_db_connection()
 
@@ -328,7 +326,7 @@ def generate_classwise_monthly_attendance(month: int, year: int):
             total_attendance = 0
             total_lectures = 0
 
-            # For each subject, get attendance data for the month and the class count conducted by the faculty
+            # For each subject, get lecture count for the selected month
             for subject_id, subject_name in zip(subject_ids, subject_names):
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute(
@@ -351,33 +349,6 @@ def generate_classwise_monthly_attendance(month: int, year: int):
                 total_lectures += lectures_count
                 if result['present_lectures']:
                     total_attendance += result['present_lectures']
-
-                cur = conn.cursor(cursor_factory=RealDictCursor)
-                cur.execute(
-                    """
-                    SELECT u.name as faculty_name,
-                           COUNT(*) as classes_conducted
-                    FROM lecture_engagement le
-                    JOIN users u ON u.id = le.faculty_id
-                    WHERE le.subject_id = %s
-                      AND EXTRACT(MONTH FROM le.date) = %s
-                      AND EXTRACT(YEAR FROM le.date) = %s
-                    GROUP BY u.name
-                    ORDER BY u.name
-                    """,
-                    (subject_id, month, year)
-                )
-                faculty_rows = cur.fetchall()
-                cur.close()
-
-                if faculty_rows:
-                    faculty_summary = '; '.join(
-                        f"{row['faculty_name']} ({row['classes_conducted']})"
-                        for row in faculty_rows
-                    )
-                else:
-                    faculty_summary = 'No classes recorded'
-                row_data[f"{subject_name} (Faculty / Classes)"] = faculty_summary
 
             row_data['Total Lectures (Non-Lab)'] = total_lectures
 
@@ -527,7 +498,7 @@ def admin_page():
     
     with tab4:
         st.header("Download Monthly Attendance")
-        st.info("Classwise Monthly Attendance Report (Non-Lab Subjects Only). Each subject also shows the faculty and number of classes conducted in that month.")
+        st.info("Classwise Monthly Attendance Report (Non-Lab Subjects Only). Each subject column shows the number of lectures held for that subject in the selected month.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -540,15 +511,20 @@ def admin_page():
         if st.button("Generate Report", key="download_attendance"):
             # Generate classwise monthly attendance
             results_by_class = generate_classwise_monthly_attendance(month, year)
-            
+            month_start = datetime(year, month, 1)
+            month_end = month_start.replace(day=28) + timedelta(days=4)
+            month_end = month_end - timedelta(days=month_end.day)
+
             if not results_by_class:
                 st.warning("No attendance data available for the selected month and year.")
             else:
+                st.markdown("## Consolidated Attendance (with class)")
+                st.caption(f"Month: {month_start.strftime('%d-%m-%Y')} - {month_end.strftime('%d-%m-%Y')}")
                 # Display reports for each class
                 for class_name, df in results_by_class.items():
                     st.subheader(f"Class: {class_name}")
                     st.dataframe(df, use_container_width=True)
-                    
+
                     # Download button for each class
                     csv = df.to_csv(index=False)
                     st.download_button(
