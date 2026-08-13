@@ -277,11 +277,12 @@ def generate_classwise_monthly_attendance(month: int, year: int):
     Excludes subjects with 'Lab' in their name.
     """
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
     
     # Get all classes
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT id, name FROM classes ORDER BY name")
     classes = cur.fetchall()
+    cur.close()
     
     results_by_class = {}
     
@@ -290,11 +291,14 @@ def generate_classwise_monthly_attendance(month: int, year: int):
         class_name = class_record['name']
         
         # Get all non-Lab subjects for this class
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            "SELECT id, name FROM subjects WHERE class_id = %s AND name NOT ILIKE '%Lab%' ORDER BY name",
-            (class_id,)
+            "SELECT id, name FROM subjects WHERE class_id = %s AND name NOT ILIKE %s ORDER BY name",
+            (class_id, '%Lab%')
         )
         subjects = cur.fetchall()
+        cur.close()
+        
         subject_ids = [s['id'] for s in subjects]
         subject_names = [s['name'] for s in subjects]
         
@@ -302,11 +306,13 @@ def generate_classwise_monthly_attendance(month: int, year: int):
             continue
         
         # Get all students in this class
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             "SELECT id, roll_no, name FROM students WHERE class_id = %s ORDER BY roll_no",
             (class_id,)
         )
         students = cur.fetchall()
+        cur.close()
         
         class_data = []
         
@@ -322,6 +328,7 @@ def generate_classwise_monthly_attendance(month: int, year: int):
             
             # For each subject, get attendance data for the month
             for subject_id, subject_name in zip(subject_ids, subject_names):
+                cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute(
                     """
                     SELECT 
@@ -335,6 +342,8 @@ def generate_classwise_monthly_attendance(month: int, year: int):
                     (student_id, subject_id, month, year)
                 )
                 result = cur.fetchone()
+                cur.close()
+                
                 lectures_count = result['total_lectures'] or 0
                 row_data[subject_name] = lectures_count
                 total_lectures += lectures_count
@@ -355,10 +364,10 @@ def generate_classwise_monthly_attendance(month: int, year: int):
         if class_data:
             results_by_class[class_name] = pd.DataFrame(class_data)
     
-    cur.close()
     conn.close()
     
     return results_by_class
+
 
 # Initialize database
 if 'db_init' not in st.session_state:
