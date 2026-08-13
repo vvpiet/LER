@@ -268,6 +268,98 @@ def generate_gradecard_docx(student_data, grades_data):
     doc.save(buffer)
     return buffer.getvalue()
 
+
+def generate_classwise_monthly_attendance(month: int, year: int):
+    """
+    Generate classwise monthly attendance report with the following columns:
+    Roll No., Name of Student, Subject 1, Subject 2, ..., Total Lectures (Non-Lab), Percentage Attendance
+    
+    Excludes subjects with 'Lab' in their name.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Get all classes
+    cur.execute("SELECT id, name FROM classes ORDER BY name")
+    classes = cur.fetchall()
+    
+    results_by_class = {}
+    
+    for class_record in classes:
+        class_id = class_record['id']
+        class_name = class_record['name']
+        
+        # Get all non-Lab subjects for this class
+        cur.execute(
+            "SELECT id, name FROM subjects WHERE class_id = %s AND name NOT ILIKE '%Lab%' ORDER BY name",
+            (class_id,)
+        )
+        subjects = cur.fetchall()
+        subject_ids = [s['id'] for s in subjects]
+        subject_names = [s['name'] for s in subjects]
+        
+        if not subjects:
+            continue
+        
+        # Get all students in this class
+        cur.execute(
+            "SELECT id, roll_no, name FROM students WHERE class_id = %s ORDER BY roll_no",
+            (class_id,)
+        )
+        students = cur.fetchall()
+        
+        class_data = []
+        
+        for student in students:
+            student_id = student['id']
+            row_data = {
+                'Roll No.': student['roll_no'],
+                'Name of Student': student['name']
+            }
+            
+            total_attendance = 0
+            total_lectures = 0
+            
+            # For each subject, get attendance data for the month
+            for subject_id, subject_name in zip(subject_ids, subject_names):
+                cur.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total_lectures,
+                        SUM(CASE WHEN present THEN 1 ELSE 0 END) as present_lectures
+                    FROM attendance
+                    WHERE student_id = %s AND subject_id = %s 
+                    AND EXTRACT(MONTH FROM date) = %s 
+                    AND EXTRACT(YEAR FROM date) = %s
+                    """,
+                    (student_id, subject_id, month, year)
+                )
+                result = cur.fetchone()
+                lectures_count = result['total_lectures'] or 0
+                row_data[subject_name] = lectures_count
+                total_lectures += lectures_count
+                if result['present_lectures']:
+                    total_attendance += result['present_lectures']
+            
+            row_data['Total Lectures (Non-Lab)'] = total_lectures
+            
+            # Calculate percentage attendance
+            if total_lectures > 0:
+                attendance_pct = (total_attendance / total_lectures) * 100
+                row_data['Percentage Attendance'] = round(attendance_pct, 2)
+            else:
+                row_data['Percentage Attendance'] = 0.0
+            
+            class_data.append(row_data)
+        
+        if class_data:
+            results_by_class[class_name] = pd.DataFrame(class_data)
+    
+    cur.close()
+    conn.close()
+    
+    return results_by_class
+
 # Initialize database
 if 'db_init' not in st.session_state:
     create_tables()
@@ -397,15 +489,37 @@ def admin_page():
     
     with tab4:
         st.header("Download Monthly Attendance")
-        month = st.selectbox("Month", list(range(1,13)), key="admin_attendance_month")
-        year = st.number_input("Year", value=2023, key="admin_attendance_year")
-        if st.button("Download", key="download_attendance"):
-            # Query attendance
-            conn = get_db_connection()
-            df = pd.read_sql(f"SELECT s.roll_no, s.name, c.name as class, sub.name as subject, a.date, a.time, a.present FROM attendance a JOIN students s ON a.student_id = s.id JOIN subjects sub ON a.subject_id = sub.id JOIN classes c ON s.class_id = c.id WHERE EXTRACT(MONTH FROM a.date) = {month} AND EXTRACT(YEAR FROM a.date) = {year}", conn)
-            conn.close()
-            csv = df.to_csv(index=False)
-            st.download_button("Download CSV", csv, "attendance.csv", key="download_att_csv")
+        st.info("Classwise Monthly Attendance Report (Non-Lab Subjects Only)")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            month = st.selectbox("Month", list(range(1,13)), key="admin_attendance_month", 
+                               format_func=lambda x: ['January', 'February', 'March', 'April', 'May', 'June', 
+                                                      'July', 'August', 'September', 'October', 'November', 'December'][x-1])
+        with col2:
+            year = st.number_input("Year", value=datetime.now().year, key="admin_attendance_year")
+        
+        if st.button("Generate Report", key="download_attendance"):
+            # Generate classwise monthly attendance
+            results_by_class = generate_classwise_monthly_attendance(month, year)
+            
+            if not results_by_class:
+                st.warning("No attendance data available for the selected month and year.")
+            else:
+                # Display reports for each class
+                for class_name, df in results_by_class.items():
+                    st.subheader(f"Class: {class_name}")
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Download button for each class
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label=f"Download {class_name} CSV",
+                        data=csv,
+                        file_name=f"attendance_{class_name}_{month:02d}_{year}.csv",
+                        key=f"download_att_csv_{class_name}"
+                    )
+                    st.markdown("---")
     
     with tab5:
         st.header("Download Lecture Engagement")
