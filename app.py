@@ -337,7 +337,7 @@ def generate_classwise_monthly_attendance(month: int, year: int):
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute(
                 """
-                SELECT COUNT(DISTINCT date, time) AS total_lectures
+                SELECT COUNT(DISTINCT (date, time)) AS total_lectures
                 FROM attendance
                 WHERE subject_id = %s
                 AND EXTRACT(MONTH FROM date) = %s
@@ -905,8 +905,8 @@ def faculty_page():
             conn.close()
             
             attendance = {}
-            for index, student in enumerate(students, start=1):
-                attendance[student['id']] = st.checkbox(f"{index}. {student['roll_no']} - {student['name']}", key=f"att_{student['id']}")
+            for student in students:
+                attendance[student['id']] = st.checkbox(f"{student['roll_no']} - {student['name']}", key=f"att_{student['id']}")
             
             if st.button("Submit Attendance", key="submit_attendance"):
                 conn = get_db_connection()
