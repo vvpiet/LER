@@ -90,7 +90,7 @@ def get_defaulter_students(threshold=60, weeks=4):
         "WHERE a.date >= %s "
         "GROUP BY s.id, s.name, s.roll_no, c.name, sub.id, sub.name "
         "HAVING (SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 < %s "
-        "ORDER BY s.roll_no",
+        "ORDER BY CASE WHEN s.roll_no ~ '^[0-9]+$' THEN CAST(s.roll_no AS INTEGER) ELSE 2147483647 END, s.roll_no",
         (start_date.date(), threshold)
     )
     defaulters = cur.fetchall()
@@ -352,7 +352,7 @@ def generate_classwise_monthly_attendance(month: int, year: int):
         # Get all students in this class
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            "SELECT id, roll_no, name FROM students WHERE class_id = %s ORDER BY roll_no",
+            "SELECT id, roll_no, name FROM students WHERE class_id = %s ORDER BY CASE WHEN roll_no ~ '^[0-9]+$' THEN CAST(roll_no AS INTEGER) ELSE 2147483647 END, roll_no",
             (class_id,)
         )
         students = cur.fetchall()
@@ -899,7 +899,7 @@ def faculty_page():
             time = st.time_input("Time", key="att_time")
             
             # Get students for the class
-            cur.execute("SELECT st.id, st.roll_no, st.name FROM students st JOIN subjects sub ON st.class_id = sub.class_id WHERE sub.id = %s ORDER BY st.roll_no", (subject_id,))
+            cur.execute("SELECT st.id, st.roll_no, st.name FROM students st JOIN subjects sub ON st.class_id = sub.class_id WHERE sub.id = %s ORDER BY CASE WHEN st.roll_no ~ '^[0-9]+$' THEN CAST(st.roll_no AS INTEGER) ELSE 2147483647 END, st.roll_no", (subject_id,))
             students = cur.fetchall()
             cur.close()
             conn.close()
@@ -941,7 +941,7 @@ def faculty_page():
             syllabus_pct = st.number_input("% Syllabus Covered", min_value=0.0, max_value=100.0)
             
             # Get attendance records for that SPECIFIC lecture (date + time)
-            cur.execute("SELECT st.roll_no, a.present FROM attendance a JOIN students st ON a.student_id = st.id WHERE a.subject_id = %s AND a.faculty_id = %s AND a.date = %s AND a.time = %s ORDER BY st.roll_no", (subject_id, user['id'], date, eng_time))
+            cur.execute("SELECT st.roll_no, a.present FROM attendance a JOIN students st ON a.student_id = st.id WHERE a.subject_id = %s AND a.faculty_id = %s AND a.date = %s AND a.time = %s ORDER BY CASE WHEN st.roll_no ~ '^[0-9]+$' THEN CAST(st.roll_no AS INTEGER) ELSE 2147483647 END, st.roll_no", (subject_id, user['id'], date, eng_time))
             att_records = cur.fetchall()
             total_students = len(att_records)
             present = sum(1 for a in att_records if a['present'])
