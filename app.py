@@ -15,6 +15,13 @@ COLLEGE_LOGO_PATH = "college_logo.png"
 # Set page config
 st.set_page_config(page_title="Lecture Engagement Register", layout="wide")
 
+# Track visitor
+try:
+    database.ensure_schema()
+    database.increment_visitor_count()
+except Exception as e:
+    st.warning(f"Could not track visitor: {str(e)}")
+
 
 def render_page_header(subtitle: str = "Lecture Engagement & Resource Management System"):
     with st.container():
@@ -39,6 +46,14 @@ def render_page_header(subtitle: str = "Lecture Engagement & Resource Management
 def render_page_footer():
     st.markdown("<hr style='border: 1px solid #ddd; margin: 24px 0 8px 0;'>", unsafe_allow_html=True)
     footer_cols = st.columns([1, 8, 1])
+    
+    # Display visitor counter
+    try:
+        visitor_count = database.get_visitor_count()
+        footer_cols[0].markdown(f"<div style='text-align:center; font-size:12px; color:#666;'>👥 Visitors: {visitor_count}</div>", unsafe_allow_html=True)
+    except:
+        pass
+    
     footer_cols[1].markdown(
         """
         <div style='text-align:center; font-size:14px; color:#444;'>
@@ -471,7 +486,7 @@ def logout():
 def admin_page():
     render_page_header("Admin Portal: Manage subjects, faculty assignments, attendance, and engagement reports")
     st.title("Admin Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "MCQ Reports", "Create Users", "Manage Students", "Defaulter Students", "Generate Grade Card"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(["Upload Students", "Manage Subjects", "Assign Faculty", "Download Attendance", "Download Engagement", "MCQ Reports", "Create Users", "Manage Students", "Defaulter Students", "Generate Grade Card", "Manage Notices"])
     
     with tab1:
         st.header("Upload Student List")
@@ -871,6 +886,57 @@ def admin_page():
                 except ImportError as e:
                     st.warning(str(e))
 
+    with tab11:
+        st.header("Manage Notices")
+        admin_id = st.session_state.user['id']
+        
+        # Create new notice
+        st.subheader("Create New Notice")
+        notice_title = st.text_input("Notice Title", key="admin_notice_title")
+        notice_content = st.text_area("Notice Content/Description", key="admin_notice_content")
+        notice_file = st.file_uploader("Upload Notice File (PDF, Word, Image)", type=["pdf", "docx", "png", "jpg", "jpeg"], key="admin_notice_file")
+        
+        if st.button("Post Notice", key="admin_post_notice"):
+            if notice_title and notice_content:
+                file_name = None
+                file_data = None
+                file_type = None
+                if notice_file:
+                    file_name = notice_file.name
+                    file_data = notice_file.read()
+                    file_type = notice_file.type
+                
+                database.create_notice(notice_title, notice_content, admin_id, file_name, file_data, file_type)
+                st.success("Notice posted successfully!")
+            else:
+                st.error("Please fill in title and content")
+        
+        # View and delete notices
+        st.subheader("All Notices")
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT n.id, n.title, n.content, u.name as issued_by_name, n.file_name, n.created_at FROM notices n JOIN users u ON n.issued_by = u.id WHERE n.is_active = TRUE ORDER BY n.created_at DESC")
+        notices = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if notices:
+            for notice in notices:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"**{notice['title']}** - Posted by {notice['issued_by_name']} on {notice['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                    st.write(notice['content'])
+                    if notice['file_name']:
+                        st.write(f"📎 Attachment: {notice['file_name']}")
+                with col2:
+                    if st.button("Delete", key=f"admin_delete_notice_{notice['id']}"):
+                        database.delete_notice(notice['id'])
+                        st.success("Notice deleted!")
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("No notices posted yet")
+
     render_page_footer()
 
 # Faculty page
@@ -878,7 +944,7 @@ def faculty_page():
     render_page_header("Faculty Portal: Mark attendance, submit lecture engagement, and upload resources")
     st.title("Faculty Dashboard")
     user = st.session_state.user
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Mark Attendance", "Lecture Engagement", "MCQ Tests", "Upload Resources", "View Resources"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Mark Attendance", "Lecture Engagement", "MCQ Tests", "Upload Resources", "View Resources", "Post Notices"])
     
     with tab1:
         st.header("Mark Attendance")
@@ -1086,6 +1152,53 @@ def faculty_page():
                         conn.close()
                         st.success("Resource deleted")
                         st.rerun()
+
+    with tab6:
+        st.header("Post Notices")
+        faculty_id = st.session_state.user['id']
+        
+        # Create new notice
+        st.subheader("Create New Notice")
+        notice_title = st.text_input("Notice Title", key="faculty_notice_title")
+        notice_content = st.text_area("Notice Content/Description", key="faculty_notice_content")
+        notice_file = st.file_uploader("Upload Notice File (PDF, Word, Image)", type=["pdf", "docx", "png", "jpg", "jpeg"], key="faculty_notice_file")
+        
+        if st.button("Post Notice", key="faculty_post_notice"):
+            if notice_title and notice_content:
+                file_name = None
+                file_data = None
+                file_type = None
+                if notice_file:
+                    file_name = notice_file.name
+                    file_data = notice_file.read()
+                    file_type = notice_file.type
+                
+                database.create_notice(notice_title, notice_content, faculty_id, file_name, file_data, file_type)
+                st.success("Notice posted successfully!")
+            else:
+                st.error("Please fill in title and content")
+        
+        # View and delete own notices
+        st.subheader("Your Notices")
+        own_notices = database.get_notices_by_user(faculty_id)
+        
+        if own_notices:
+            for notice in own_notices:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"**{notice['title']}** - Posted on {notice['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                    st.write(notice['content'])
+                    if notice['file_name']:
+                        st.write(f"📎 Attachment: {notice['file_name']}")
+                with col2:
+                    if st.button("Delete", key=f"faculty_delete_notice_{notice['id']}"):
+                        database.delete_notice(notice['id'])
+                        st.success("Notice deleted!")
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("You haven't posted any notices yet")
+    
     render_page_footer()
 
 # Student page
@@ -1096,7 +1209,7 @@ def student_page():
     student_info = database.get_student_by_user(user)
     student_roll_no = student_info['roll_no'] if student_info else None
     student_id = student_info['id'] if student_info else None
-    tab1, tab2, tab3, tab4 = st.tabs(["View Attendance", "Download Resources", "MCQ Tests", "Download Grade Card"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["View Attendance", "Download Resources", "MCQ Tests", "Download Grade Card", "Notices"])
     
     with tab1:
         st.header("Your Attendance")
@@ -1352,6 +1465,32 @@ def student_page():
                 st.success("✅ Grade card generated successfully and saved for student download.")
         else:
             st.warning("Student information not found")
+
+    with tab5:
+        st.header("📢 Notices")
+        all_notices = database.get_all_notices()
+        
+        if all_notices:
+            for notice in all_notices:
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    st.write(f"**{notice['title']}** - Posted by {notice['issued_by_name']} on {notice['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                    st.write(notice['content'])
+                    if notice['file_name']:
+                        st.write(f"📎 Attachment: {notice['file_name']}")
+                        # Download button for attachment
+                        notice_file = database.get_notice_file(notice['id'])
+                        if notice_file and notice_file['file_data']:
+                            col2.download_button(
+                                "📥 Download",
+                                notice_file['file_data'],
+                                notice_file['file_name'],
+                                mime=notice_file['file_type'] if notice_file['file_type'] else "application/octet-stream",
+                                key=f"download_notice_{notice['id']}"
+                            )
+                st.divider()
+        else:
+            st.info("No notices posted yet")
     
     render_page_footer()
 

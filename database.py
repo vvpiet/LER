@@ -200,6 +200,22 @@ def ensure_schema():
             selected_option CHAR(1),
             is_correct BOOLEAN
         );
+        CREATE TABLE IF NOT EXISTS notices (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            content TEXT,
+            issued_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            file_name VARCHAR(255),
+            file_data BYTEA,
+            file_type VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE
+        );
+        CREATE TABLE IF NOT EXISTS visitor_counter (
+            id SERIAL PRIMARY KEY,
+            visit_count INTEGER DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     ''')
     conn.commit()
     cur.close()
@@ -781,3 +797,78 @@ def delete_student(student_id):
     conn.commit()
     cur.close()
     conn.close()
+
+# Notice functions
+def create_notice(title, content, issued_by, file_name=None, file_data=None, file_type=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        'INSERT INTO notices (title, content, issued_by, file_name, file_data, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
+        (title, content, issued_by, file_name, psycopg2.Binary(file_data) if file_data else None, file_type)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_all_notices():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        'SELECT n.id, n.title, n.content, u.name as issued_by_name, n.file_name, n.file_type, n.created_at FROM notices n JOIN users u ON n.issued_by = u.id WHERE n.is_active = TRUE ORDER BY n.created_at DESC'
+    )
+    notices = cur.fetchall()
+    cur.close()
+    conn.close()
+    return notices if notices else []
+
+def get_notice_file(notice_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute('SELECT file_name, file_data, file_type FROM notices WHERE id = %s', (notice_id,))
+    notice = cur.fetchone()
+    cur.close()
+    conn.close()
+    return notice
+
+def delete_notice(notice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('UPDATE notices SET is_active = FALSE WHERE id = %s', (notice_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_notices_by_user(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        'SELECT n.id, n.title, n.content, u.name as issued_by_name, n.file_name, n.file_type, n.created_at FROM notices n JOIN users u ON n.issued_by = u.id WHERE n.issued_by = %s AND n.is_active = TRUE ORDER BY n.created_at DESC',
+        (user_id,)
+    )
+    notices = cur.fetchall()
+    cur.close()
+    conn.close()
+    return notices if notices else []
+
+# Visitor counter functions
+def increment_visitor_count():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Check if record exists, if not create it
+    cur.execute('SELECT id FROM visitor_counter LIMIT 1')
+    if cur.fetchone() is None:
+        cur.execute('INSERT INTO visitor_counter (visit_count) VALUES (1)')
+    else:
+        cur.execute('UPDATE visitor_counter SET visit_count = visit_count + 1, last_updated = CURRENT_TIMESTAMP')
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_visitor_count():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute('SELECT visit_count FROM visitor_counter LIMIT 1')
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return result['visit_count'] if result else 0
