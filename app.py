@@ -3,6 +3,7 @@ import pandas as pd
 import database
 from database import *
 import os
+import csv
 from datetime import datetime, timedelta
 from fpdf import FPDF
 import io
@@ -269,6 +270,32 @@ def generate_gradecard_docx(student_data, grades_data):
     return buffer.getvalue()
 
 
+def get_month_start_end(month: int, year: int):
+    """Return the first and last day of the selected month."""
+    month_start = datetime(year, month, 1)
+    month_end = month_start.replace(day=28) + timedelta(days=4)
+    month_end = month_end - timedelta(days=month_end.day)
+    return month_start, month_end
+
+
+def build_attendance_csv_export(class_name: str, attendance_df: pd.DataFrame, month: int, year: int) -> str:
+    """Create a CSV string with header lines that match the monthly report requirements."""
+    month_start, month_end = get_month_start_end(month, year)
+    export_df = attendance_df.copy()
+
+    if 'Serial No.' not in export_df.columns:
+        export_df.insert(0, 'Serial No.', range(1, len(export_df) + 1))
+
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow([f'Consolidated Attendance ({class_name})'])
+    writer.writerow([f'MONTH : {month_start.strftime("%d-%m-%Y")} - {month_end.strftime("%d-%m-%Y")}'])
+    writer.writerow([])
+    writer.writerow(export_df.columns.tolist())
+    writer.writerows(export_df.itertuples(index=False, name=None))
+    return csv_buffer.getvalue()
+
+
 def generate_classwise_monthly_attendance(month: int, year: int):
     """
     Generate classwise monthly attendance report with the following columns:
@@ -304,6 +331,23 @@ def generate_classwise_monthly_attendance(month: int, year: int):
 
         if not subjects:
             continue
+
+        lecture_totals = {}
+        for subject_id, subject_name in zip(subject_ids, subject_names):
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT date, time) AS total_lectures
+                FROM attendance
+                WHERE subject_id = %s
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(YEAR FROM date) = %s
+                """,
+                (subject_id, month, year)
+            )
+            result = cur.fetchone()
+            cur.close()
+            lecture_totals[subject_name] = int(result['total_lectures'] or 0)
 
         # Get all students in this class
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -362,7 +406,13 @@ def generate_classwise_monthly_attendance(month: int, year: int):
             class_data.append(row_data)
 
         if class_data:
-            results_by_class[class_name] = pd.DataFrame(class_data)
+            df = pd.DataFrame(class_data)
+            for subject_name in subject_names:
+                subject_col = subject_name
+                if subject_col in df.columns:
+                    subject_total = lecture_totals.get(subject_name, 0)
+                    df = df.rename(columns={subject_col: f"{subject_col} ({subject_total})"})
+            results_by_class[class_name] = df
 
     conn.close()
 
@@ -509,7 +559,6 @@ def admin_page():
             year = st.number_input("Year", value=datetime.now().year, key="admin_attendance_year")
         
         if st.button("Generate Report", key="download_attendance"):
-            # Generate classwise monthly attendance
             results_by_class = generate_classwise_monthly_attendance(month, year)
             month_start = datetime(year, month, 1)
             month_end = month_start.replace(day=28) + timedelta(days=4)
@@ -518,15 +567,13 @@ def admin_page():
             if not results_by_class:
                 st.warning("No attendance data available for the selected month and year.")
             else:
-                st.markdown("## Consolidated Attendance (with class)")
+                st.markdown("## Consolidated Attendance")
                 st.caption(f"Month: {month_start.strftime('%d-%m-%Y')} - {month_end.strftime('%d-%m-%Y')}")
-                # Display reports for each class
                 for class_name, df in results_by_class.items():
                     st.subheader(f"Class: {class_name}")
                     st.dataframe(df, use_container_width=True)
 
-                    # Download button for each class
-                    csv = df.to_csv(index=False)
+                    csv = build_attendance_csv_export(class_name, df, month, year)
                     st.download_button(
                         label=f"Download {class_name} CSV",
                         data=csv,
@@ -534,13 +581,12 @@ def admin_page():
                         key=f"download_att_csv_{class_name}"
                     )
                     st.markdown("---")
-    
+
     with tab5:
         st.header("Download Lecture Engagement")
         period = st.selectbox("Period", ["Weekly", "Monthly"], key="admin_engagement_period")
         if period == "Weekly":
             week_start = st.date_input("Week Start", key="admin_engagement_week_start")
-            # Calculate week end
             week_end = week_start + pd.Timedelta(days=6)
         else:
             month = st.selectbox("Month", list(range(1,13)), key="admin_engagement_month")
@@ -859,8 +905,8 @@ def faculty_page():
             conn.close()
             
             attendance = {}
-            for student in students:
-                attendance[student['id']] = st.checkbox(f"{student['roll_no']} - {student['name']}", key=f"att_{student['id']}")
+            for index, student in enumerate(students, start=1):
+                attendance[student['id']] = st.checkbox(f"{index}. {student['roll_no']} - {student['name']}", key=f"att_{student['id']}")
             
             if st.button("Submit Attendance", key="submit_attendance"):
                 conn = get_db_connection()
