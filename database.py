@@ -802,13 +802,18 @@ def delete_student(student_id):
 def create_notice(title, content, issued_by, file_name=None, file_data=None, file_type=None):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        'INSERT INTO notices (title, content, issued_by, file_name, file_data, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
-        (title, content, issued_by, file_name, psycopg2.Binary(file_data) if file_data else None, file_type)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur.execute(
+            'INSERT INTO notices (title, content, issued_by, file_name, file_data, file_type) VALUES (%s, %s, %s, %s, %s, %s)',
+            (title, content, issued_by, file_name, psycopg2.Binary(file_data) if file_data else None, file_type)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 def get_all_notices():
     conn = get_db_connection()

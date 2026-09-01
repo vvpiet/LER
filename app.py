@@ -95,7 +95,7 @@ def get_defaulter_students(threshold=60, weeks=4):
     start_date = datetime.now() - timedelta(weeks=weeks)
     
     cur.execute(
-        "SELECT DISTINCT s.id, s.name, s.roll_no, c.name as class_name, "
+        "SELECT s.id, s.name, s.roll_no, c.name as class_name, "
         "sub.id as subject_id, sub.name as subject_name, "
         "(SUM(CASE WHEN a.present THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 as attendance_pct "
         "FROM students s "
@@ -599,6 +599,8 @@ def admin_page():
 
     with tab5:
         st.header("Download Lecture Engagement")
+        class_options = ["All classes", "SY", "TY", "B.Tech"]
+        selected_class = st.selectbox("Class", class_options, key="admin_engagement_class")
         period = st.selectbox("Period", ["Weekly", "Monthly"], key="admin_engagement_period")
         if period == "Weekly":
             week_start = st.date_input("Week Start", key="admin_engagement_week_start")
@@ -608,20 +610,27 @@ def admin_page():
             year = st.number_input("Year", value=2023, key="admin_engagement_year")
         if st.button("Download", key="download_engagement"):
             conn = get_db_connection()
+            class_filter = ""
+            query_params = []
+            if selected_class != "All classes":
+                class_filter = " AND c.name = %s"
+                query_params.append(selected_class)
             if period == "Weekly":
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute(
-                    "SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE le.date BETWEEN %s AND %s",
-                    (week_start, week_end)
+                    "SELECT le.date, c.name as class_name, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id JOIN classes c ON s.class_id = c.id WHERE le.date BETWEEN %s AND %s" + class_filter,
+                    (week_start, week_end, *query_params)
                 )
                 rows = cur.fetchall()
                 cur.close()
                 df = pd.DataFrame(rows)
             else:
-                df = pd.read_sql(f"SELECT le.date, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id WHERE EXTRACT(MONTH FROM le.date) = {month} AND EXTRACT(YEAR FROM le.date) = {year}", conn)
+                query_params = [month, year, *query_params]
+                df = pd.read_sql("SELECT le.date, c.name as class_name, u.name as faculty, s.name as subject, le.topic_covered, le.lecture_number, le.syllabus_percent, le.total_present, le.total_absent, array_to_string(le.absent_roll_numbers, ', ') as absent_roll_numbers FROM lecture_engagement le JOIN users u ON le.faculty_id = u.id JOIN subjects s ON le.subject_id = s.id JOIN classes c ON s.class_id = c.id WHERE EXTRACT(MONTH FROM le.date) = %s AND EXTRACT(YEAR FROM le.date) = %s" + class_filter, conn, params=query_params)
             conn.close()
             csv = df.to_csv(index=False)
-            st.download_button("Download CSV", csv, "engagement.csv", key="download_eng_csv")
+            filename_class = selected_class.lower().replace(".", "") if selected_class != "All classes" else "all_classes"
+            st.download_button("Download CSV", csv, f"engagement_{filename_class}.csv", key="download_eng_csv")
     
     with tab6:
         st.header("MCQ Reports")
@@ -906,8 +915,11 @@ def admin_page():
                     file_data = notice_file.read()
                     file_type = notice_file.type
                 
-                database.create_notice(notice_title, notice_content, admin_id, file_name, file_data, file_type)
-                st.success("Notice posted successfully!")
+                try:
+                    database.create_notice(notice_title.strip(), notice_content.strip(), admin_id, file_name, file_data, file_type)
+                    st.success("Notice posted successfully!")
+                except Exception as e:
+                    st.error(f"Could not post notice: {e}")
             else:
                 st.error("Please fill in title and content")
         
@@ -1173,8 +1185,11 @@ def faculty_page():
                     file_data = notice_file.read()
                     file_type = notice_file.type
                 
-                database.create_notice(notice_title, notice_content, faculty_id, file_name, file_data, file_type)
-                st.success("Notice posted successfully!")
+                try:
+                    database.create_notice(notice_title.strip(), notice_content.strip(), faculty_id, file_name, file_data, file_type)
+                    st.success("Notice posted successfully!")
+                except Exception as e:
+                    st.error(f"Could not post notice: {e}")
             else:
                 st.error("Please fill in title and content")
         
