@@ -434,6 +434,47 @@ def generate_classwise_monthly_attendance(month: int, year: int):
     return results_by_class
 
 
+def generate_classwise_daily_attendance(month: int, year: int):
+    """Generate detailed attendance records grouped by class for the selected month."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT c.name AS class_name, a.date, a.time, sub.name AS subject_name,
+               st.roll_no, st.name AS student_name, a.present,
+               COALESCE(u.name, u.username) AS faculty_name
+        FROM attendance a
+        JOIN students st ON a.student_id = st.id
+        JOIN classes c ON st.class_id = c.id
+        JOIN subjects sub ON a.subject_id = sub.id
+        JOIN users u ON a.faculty_id = u.id
+        WHERE EXTRACT(MONTH FROM a.date) = %s
+          AND EXTRACT(YEAR FROM a.date) = %s
+        ORDER BY c.name, a.date, a.time, sub.name,
+                 CASE WHEN st.roll_no ~ '^[0-9]+$' THEN CAST(st.roll_no AS INTEGER) ELSE 2147483647 END,
+                 st.roll_no
+        """,
+        (month, year),
+    )
+    records = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    results_by_class = {}
+    for record in records:
+        class_name = record.pop('class_name')
+        record['Date'] = record.pop('date').strftime('%d-%m-%Y')
+        record['Time'] = record.pop('time').strftime('%H:%M')
+        record['Subject'] = record.pop('subject_name')
+        record['Roll No.'] = record.pop('roll_no')
+        record['Name of Student'] = record.pop('student_name')
+        record['Attendance'] = 'Present' if record.pop('present') else 'Absent'
+        record['Faculty'] = record.pop('faculty_name')
+        results_by_class.setdefault(class_name, []).append(record)
+
+    return {class_name: pd.DataFrame(records) for class_name, records in results_by_class.items()}
+
+
 # Initialize database
 if 'db_init' not in st.session_state:
     create_tables()
@@ -594,6 +635,26 @@ def admin_page():
                         data=csv,
                         file_name=f"attendance_{class_name}_{month:02d}_{year}.csv",
                         key=f"download_att_csv_{class_name}"
+                    )
+                    st.markdown("---")
+
+        if st.button("Generate Daily Attendance", key="download_daily_attendance"):
+            daily_results_by_class = generate_classwise_daily_attendance(month, year)
+            if not daily_results_by_class:
+                st.warning("No daily attendance data available for the selected month and year.")
+            else:
+                st.markdown("## Daily Attendance")
+                st.caption(f"Month: {month_start.strftime('%d-%m-%Y')} - {month_end.strftime('%d-%m-%Y')}")
+                for class_name, df in daily_results_by_class.items():
+                    st.subheader(f"Class: {class_name}")
+                    st.dataframe(df, use_container_width=True)
+
+                    csv = build_attendance_csv_export(class_name, df, month, year)
+                    st.download_button(
+                        label=f"Download Daily {class_name} CSV",
+                        data=csv,
+                        file_name=f"daily_attendance_{class_name}_{month:02d}_{year}.csv",
+                        key=f"download_daily_att_csv_{class_name}"
                     )
                     st.markdown("---")
 
@@ -983,6 +1044,11 @@ def faculty_page():
             conn.close()
             
             attendance = {}
+            if st.button("Select All Present", key="select_all_attendance"):
+                for student in students:
+                    st.session_state[f"att_{student['id']}"] = True
+                st.rerun()
+
             for student in students:
                 attendance[student['id']] = st.checkbox(f"{student['roll_no']} - {student['name']}", key=f"att_{student['id']}")
             
