@@ -613,12 +613,11 @@ def admin_page():
                                                       'July', 'August', 'September', 'October', 'November', 'December'][x-1])
         with col2:
             year = st.number_input("Year", value=datetime.now().year, key="admin_attendance_year")
+
+        month_start, month_end = get_month_start_end(month, year)
         
         if st.button("Generate Report", key="download_attendance"):
             results_by_class = generate_classwise_monthly_attendance(month, year)
-            month_start = datetime(year, month, 1)
-            month_end = month_start.replace(day=28) + timedelta(days=4)
-            month_end = month_end - timedelta(days=month_end.day)
 
             if not results_by_class:
                 st.warning("No attendance data available for the selected month and year.")
